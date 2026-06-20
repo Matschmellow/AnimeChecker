@@ -1,9 +1,10 @@
 :root {
-    --bg-color: #0f0f15;
-    --card-bg: #1c1c26;
+    --bg-color: #0b0b0e;
+    --card-bg: #14141f;
     --accent-color: #fa5252; 
-    --success-color: #4caf50; /* Grün für "Gesehen" */
-    --text-color: #e0e0e0;
+    --success-color: #2ecc71;
+    --text-color: #f1f2f6;
+    --text-muted: #a4b0be;
 }
 
 body {
@@ -15,129 +16,224 @@ body {
 }
 
 .container {
-    max-width: 1000px;
+    max-width: 1200px;
     margin: 0 auto;
 }
 
-h1 { text-align: center; color: var(--accent-color); }
+h1 {
+    text-align: center;
+    color: var(--accent-color);
+    font-weight: 800;
+    letter-spacing: 1px;
+}
 
 .input-section {
     display: flex;
     gap: 10px;
-    margin-bottom: 30px;
+    margin-bottom: 40px;
     justify-content: center;
-    flex-wrap: wrap;
 }
 
-/* Neu: Wrapper für das Suchfeld und Dropdown */
 .input-wrapper {
     position: relative;
     width: 100%;
-    max-width: 300px;
+    max-width: 400px;
 }
 
 input {
     width: 100%;
     box-sizing: border-box;
-    padding: 12px;
-    border: none;
-    border-radius: 8px;
+    padding: 14px;
+    border: 2px solid #232333;
+    border-radius: 10px;
     background-color: var(--card-bg);
     color: var(--text-color);
     font-size: 16px;
+    transition: 0.2s;
 }
 
-/* Neu: Das Dropdown-Menü */
+input:focus {
+    border-color: var(--accent-color);
+    outline: none;
+}
+
 .autocomplete-list {
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
-    background-color: #2b2b36;
-    border-radius: 8px;
+    background-color: #1f1f2e;
+    border-radius: 10px;
     margin-top: 5px;
-    max-height: 200px;
+    max-height: 250px;
     overflow-y: auto;
     z-index: 10;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-    display: none; /* Ist unsichtbar, bis man tippt */
+    box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+    display: none;
 }
 
 .autocomplete-item {
-    padding: 12px;
+    padding: 14px;
     cursor: pointer;
-    border-bottom: 1px solid #1c1c26;
+    border-bottom: 1px solid #14141f;
 }
 
 .autocomplete-item:hover {
     background-color: var(--accent-color);
-    color: white;
 }
 
 button {
-    padding: 12px 20px;
+    padding: 14px 24px;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     background-color: var(--accent-color);
     color: white;
     font-size: 16px;
     font-weight: bold;
     cursor: pointer;
+    transition: 0.2s;
 }
 
+button:hover { opacity: 0.9; }
+
+/* Das große Dashboard Grid */
 .anime-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 25px;
 }
 
+/* Die neue, professionelle Anime-Karte */
 .anime-card {
     background-color: var(--card-bg);
-    padding: 20px;
-    border-radius: 12px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4);
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    border-top: 4px solid var(--accent-color);
-    transition: 0.3s;
+    border: 1px solid #232333;
 }
 
-/* Neu: Wenn der Anime abgeschlossen ist */
-.anime-card.watched {
-    border-top: 4px solid var(--success-color);
-    opacity: 0.7;
-}
-
-.anime-title { font-size: 1.2em; font-weight: bold; margin: 0; }
-
-.controls {
+.anime-header-block {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    gap: 15px;
+    padding: 15px;
 }
 
-.ep-btn { background-color: #2b2b36; padding: 8px 15px; }
+.anime-poster {
+    width: 80px;
+    height: 115px;
+    object-fit: cover;
+    border-radius: 8px;
+    background-color: #232333;
+}
+
+.anime-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.anime-title {
+    font-size: 1.15em;
+    font-weight: bold;
+    margin: 0 0 5px 0;
+    line-height: 1.3;
+}
+
+.anime-meta {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* Fortschrittsbalken */
+.progress-container {
+    padding: 0 15px;
+    margin-bottom: 10px;
+}
+.progress-bar-bg {
+    background-color: #232333;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+}
+.progress-bar-fill {
+    background-color: var(--success-color);
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+/* Das neue Episoden-Auswahl-Grid */
+.episode-box-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0 15px;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.episode-grid-container {
+    padding: 0 15px 15px 15px;
+    max-height: 110px;
+    overflow-y: auto;
+}
+
+.episode-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+}
+
+.episode-badge {
+    background-color: #232333;
+    color: var(--text-color);
+    border: none;
+    padding: 8px 0;
+    text-align: center;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.episode-badge:hover {
+    background-color: #323247;
+}
+
+/* Wenn eine einzelne Folge geschaut wurde */
+.episode-badge.watched {
+    background-color: var(--success-color);
+    color: #0b0b0e;
+}
+
+/* Action-Buttons unten */
+.card-actions {
+    padding: 15px;
+    margin-top: auto;
+    border-top: 1px solid #232333;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
 
 .stream-link {
     text-align: center;
     text-decoration: none;
     background-color: var(--accent-color);
     color: white;
-    padding: 10px;
-    border-radius: 6px;
+    padding: 12px;
+    border-radius: 8px;
     font-weight: bold;
+    font-size: 14px;
 }
 
-/* Neu: Der "Gesehen" Button */
-.watched-btn {
-    background-color: transparent;
-    border: 1px solid var(--success-color);
-    color: var(--success-color);
-    padding: 8px;
-    width: 100%;
+.search-fallback {
+    text-align: center;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-size: 12px;
 }
-
-.watched-btn.active {
-    background-color: var(--success-color);
-    color: white;
-}
+.search-fallback:hover { color: var(--accent-color); }
