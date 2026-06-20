@@ -1,4 +1,4 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV3')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV2')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
@@ -65,11 +65,11 @@ function selectAnime(name, slug, image) {
     document.getElementById('autocompleteList').style.display = 'none';
 }
 
-function addAnime(manualData = null) {
+function addAnime() {
     const nameInput = document.getElementById('animeName');
-    if (!manualData && nameInput.value.trim() === '') return;
+    if (!currentSelectedAnime && nameInput.value.trim() === '') return;
 
-    let animeData = manualData || currentSelectedAnime || { 
+    let animeData = currentSelectedAnime || { 
         name: nameInput.value.trim(), 
         slug: generateSlug(nameInput.value.trim()), 
         image: null 
@@ -102,8 +102,18 @@ function addAnime(manualData = null) {
             anime.isLoading = false;
 
             if (data.exists === false) {
-                anime.hasWarning = true;
-                saveAndRender();
+                fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name)}&limit=1`)
+                    .then(r => r.json())
+                    .then(jData => {
+                        if(jData.data && jData.data.length > 0) {
+                            anime.seasons = [{ number: 1, episodes: jData.data[0].episodes || 12, isVerified: true }];
+                        }
+                        anime.hasWarning = true;
+                        saveAndRender();
+                    }).catch(() => {
+                        anime.hasWarning = true;
+                        saveAndRender();
+                    });
             } else {
                 anime.seasons = [];
                 const maxS = data.totalSeasons || 1;
@@ -128,7 +138,8 @@ function addAnimeFromData(name, slug, image) {
         alert("Diesen Anime hast du bereits auf deiner Liste!");
         return;
     }
-    addAnime({ name, slug, image });
+    currentSelectedAnime = { name, slug, image };
+    addAnime();
 }
 
 function switchTab(animeId, seasonNumber) {
@@ -151,7 +162,6 @@ function switchTab(animeId, seasonNumber) {
                     seasonData.isVerified = true;
                     saveAndRender();
                 } else {
-                    // Jikan Backup Fallback bei Blockade
                     fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name + " Season " + seasonNumber)}&limit=1`)
                         .then(r => r.json())
                         .then(jData => {
@@ -159,7 +169,7 @@ function switchTab(animeId, seasonNumber) {
                                 seasonData.episodes = jData.data[0].episodes || 12;
                             }
                             seasonData.isVerified = true;
-                            saveAndRender(); // Daten permanent sichern
+                            saveAndRender(); 
                         }).catch(() => {
                             seasonData.isVerified = true;
                             saveAndRender();
@@ -184,7 +194,7 @@ function watchEpisodeAuto(animeId, seasonNum, epNum) {
         anime.watchedEpisodes.push(epKey);
     }
     
-    localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
     setTimeout(() => { renderList(); }, 300);
 }
 
@@ -272,13 +282,24 @@ function removeAnime(id) {
     saveAndRender();
 }
 
+// NEU: Hilfsfunktion, um zu prüfen, ob die AKTUELL GEÖFFNETE Staffel komplett fertig geschaut wurde
+function isCurrentSeasonFinished(anime) {
+    if (anime.isLoading || !anime.seasons) return false;
+    const curSeason = anime.activeTab || 1;
+    const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
+    const maxBoxen = seasonData.episodes;
+    
+    const geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
+    return geschauteInStaffel >= maxBoxen && maxBoxen > 0;
+}
+
 function changeSort() {
     currentSortCriteria = document.getElementById('sortCriteria').value;
     renderList();
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV1', JSON.stringify(animeList));
     renderList();
 }
 
@@ -295,7 +316,10 @@ function renderList() {
 
     grid.innerHTML = '';
 
+    // --- NEU: Erweiterter Sortier-Algorithmus ---
+    // Wir sortieren das Array zuerst nach Kriterium, und schieben "beendete" Staffeln danach gnadenlos nach hinten!
     let sortedList = [...animeList];
+    
     if (currentSortCriteria === 'name_asc') {
         sortedList.sort((a, b) => a.name.localeCompare(b.name));
     } else if (currentSortCriteria === 'progress_desc') {
@@ -303,6 +327,13 @@ function renderList() {
     } else {
         sortedList.sort((a, b) => b.id - a.id);
     }
+
+    // Jetzt der Trick: Fertige Animes fliegen ans Ende
+    sortedList.sort((a, b) => {
+        const aDone = isCurrentSeasonFinished(a) ? 1 : 0;
+        const bDone = isCurrentSeasonFinished(b) ? 1 : 0;
+        return aDone - bDone; // 0 kommt vor 1, sprich: unfertige kommen vor fertigen!
+    });
 
     sortedList.forEach(anime => {
         const curSeason = anime.activeTab || 1;
@@ -313,6 +344,8 @@ function renderList() {
         while (anime.watchedEpisodes.includes(`s${curSeason}e${nächsteFolge}`) && nächsteFolge <= maxBoxen) {
             nächsteFolge++;
         }
+        
+        const isFinished = isCurrentSeasonFinished(anime);
         if (nächsteFolge > maxBoxen) nächsteFolge = maxBoxen;
 
         let geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
@@ -324,6 +357,13 @@ function renderList() {
         const card = document.createElement('div');
         card.className = 'anime-card';
         
+        // NEU: Wenn fertig, bleichen wir die Karte dezent aus, um den Fokus auf die aktiven Serien zu legen
+        if (isFinished) {
+            card.style.opacity = "0.45";
+            card.style.filter = "saturate(0.7)";
+            card.style.borderColor = "var(--success)";
+        }
+
         const posterHtml = anime.image 
             ? `<img class="anime-poster" src="${anime.image}" alt="Poster">`
             : `<div class="placeholder-poster">📺</div>`;
@@ -337,6 +377,11 @@ function renderList() {
         const warningHtml = anime.hasWarning 
             ? `<div style="color: #ffaa00; font-size: 11px; margin-top: 4px; font-weight: bold;">⚠️ Link unbestätigt (Backup aktiv)</div>` 
             : '';
+
+        // NEU: Ein kleiner, stylischer Badge-Text im Header, falls fertig!
+        const statusMetaHtml = isFinished 
+            ? `<div style="color: var(--success); font-weight: 800; font-size: 12px; margin-top: 4px;">🎉 STAFFEL BEENDET!</div>`
+            : `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>`;
 
         let contentAreaHtml = '';
         
@@ -376,12 +421,17 @@ function renderList() {
             `;
         }
 
+        // NEU: Wenn fertig, ändert sich der große rote Button zu einem grünen "Erneut anschauen"-Button oder Link zur nächsten Staffel
+        const actionButtonHtml = isFinished
+            ? `<a href="https://aniworld.to/anime/stream/${anime.slug}/staffel-${curSeason + 1}" target="_blank" class="stream-link" style="background-color: var(--success); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.2);" onclick="switchTab(${anime.id}, ${curSeason + 1})">Nächste Staffel checken 🎉</a>`
+            : `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curSeason}, ${nächsteFolge})">St. ${curSeason} Folge ${nächsteFolge} schauen</a>`;
+
         card.innerHTML = `
             <div class="anime-header-block">
                 ${posterHtml}
                 <div class="anime-info">
                     <h3 class="anime-title">${anime.name}</h3>
-                    <div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>
+                    ${statusMetaHtml}
                     <div class="anime-meta" style="font-size: 11px; margin-top:4px;">Haken Gesamt: 🏆 ${anime.watchedEpisodes.length}</div>
                     ${warningHtml}
                 </div>
@@ -398,7 +448,7 @@ function renderList() {
             ${contentAreaHtml}
             
             <div class="card-actions">
-                <a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curSeason}, ${nächsteFolge})">St. ${curSeason} Folge ${nächsteFolge} schauen</a>
+                ${actionButtonHtml}
                 <div style="display:flex; justify-content:space-between; margin-top:12px;">
                     <a href="${searchUrl}" target="_blank" class="search-fallback">🔍 Auf AniWorld suchen</a>
                     <div style="display:flex; gap:10px;">
