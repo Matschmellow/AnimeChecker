@@ -453,7 +453,7 @@ function renderList() {
 
         let actionButtonHtml = '';
         if (isAllFinished) {
-            actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #111, #222); color: #747d8c; border:1px solid var(--border-color); cursor: default; box-shadow: none; font-weight:800;">🏆 KOMPLETT GESCHAUET</div>`;
+            actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #111, #222); color: #747d8c; border:1px solid var(--border-color); cursor: default; box-shadow: none; font-weight:800;">🏆 KOMPLETT GESCHAUT</div>`;
         } else if (isSeasonFinished) {
             const totalAvailableSeasons = anime.seasons ? anime.seasons.length : 1;
             if (curSeason < totalAvailableSeasons) {
