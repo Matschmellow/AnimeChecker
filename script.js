@@ -4,7 +4,6 @@ let currentSortCriteria = 'date_desc';
 let typingTimer;
 const doneTypingInterval = 500;
 
-// Die URL unseres Servers (Vercel erkennt relative Pfade automatisch!)
 const API_BASE = '/api/anime';
 
 function showSuggestions() {
@@ -28,14 +27,18 @@ function showSuggestions() {
                 list.innerHTML = '';
                 if (data.data && data.data.length > 0) {
                     data.data.forEach(anime => {
-                        const title = anime.title;
-                        const slug = generateSlug(title);
+                        const jpTitle = anime.title;
+                        const engTitle = anime.title_english;
+                        
+                        const displayTitle = engTitle ? `${engTitle} (${jpTitle})` : jpTitle;
+                        const slugTitle = engTitle || jpTitle;
+                        const slug = generateSlug(slugTitle);
                         const imageUrl = (anime.images && anime.images.jpg) ? anime.images.jpg.large_image_url : null;
                         
                         const item = document.createElement('div');
                         item.className = 'autocomplete-item';
-                        item.innerText = title;
-                        item.onclick = () => selectAnime(title, slug, imageUrl);
+                        item.innerText = displayTitle;
+                        item.onclick = () => selectAnime(engTitle || jpTitle, slug, imageUrl);
                         list.appendChild(item);
                     });
                 } else {
@@ -47,11 +50,14 @@ function showSuggestions() {
     }, doneTypingInterval);
 }
 
+// NEU: Der schlaue Filter, der Jahreszahlen (2011) automatisch entfernt!
 function generateSlug(title) {
     return title.toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-');
+        .replace(/\([^)]+\)/g, '') // Entfernt ALLES in Klammern, z.B. (2011)
+        .replace(/[^a-z0-9\s-]/g, '') // Sonderzeichen weg
+        .trim() // Leerzeichen am Ende weg
+        .replace(/\s+/g, '-') // Leerzeichen zu Bindestrich
+        .replace(/-+/g, '-'); // Doppelte Bindestriche weg
 }
 
 function selectAnime(name, slug, image) {
@@ -60,7 +66,6 @@ function selectAnime(name, slug, image) {
     document.getElementById('autocompleteList').style.display = 'none';
 }
 
-// VOLLAUTOMATISCH: Holt beim Hinzufügen die echten Daten von AniWorld über unser Backend
 function addAnime() {
     const nameInput = document.getElementById('animeName');
     if (nameInput.value.trim() === '') return;
@@ -71,14 +76,14 @@ function addAnime() {
         image: null 
     };
 
-    // Wir erstellen die Karte vorab mit Standardwerten
     const newAnime = {
         id: Date.now(),
         name: animeData.name,
         slug: animeData.slug,
         image: animeData.image,
         activeTab: 1,
-        isLoading: true, // Zeigt einen Lade-Status an
+        isLoading: true,
+        isEditing: false, // NEU: Bearbeitungs-Modus
         seasons: [{ number: 1, episodes: 12 }],
         watchedEpisodes: []
     };
@@ -88,7 +93,6 @@ function addAnime() {
     currentSelectedAnime = null;
     saveAndRender();
 
-    // Jetzt fragen wir im Hintergrund den Server nach den echten AniWorld-Daten
     fetch(`${API_BASE}?slug=${newAnime.slug}`)
         .then(res => res.json())
         .then(data => {
@@ -96,15 +100,18 @@ function addAnime() {
             if (anime) {
                 anime.isLoading = false;
                 anime.seasons = [];
-                // Erstelle automatisch alle Staffeln, die auf AniWorld gefunden wurden!
                 for (let i = 1; i <= data.totalSeasons; i++) {
                     anime.seasons.push({ 
                         number: i, 
-                        episodes: i === 1 ? data.totalEpisodes : 12 // Staffel 1 bekommt direkt die echten Folgen
+                        episodes: i === 1 ? data.totalEpisodes : 12,
+                        isVerified: i === 1 ? true : false
                     });
                 }
                 saveAndRender();
             }
+        }).catch(() => {
+            const anime = animeList.find(a => a.id === newAnime.id);
+            if (anime) { anime.isLoading = false; saveAndRender(); }
         });
 }
 
@@ -114,7 +121,6 @@ function addAnimeFromData(name, slug, image) {
     addAnime();
 }
 
-// VOLLAUTOMATISCH: Wenn du das Tab wechselst, schaut der Server nach, wie viele Folgen die neue Staffel hat
 function switchTab(animeId, seasonNumber) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -122,7 +128,6 @@ function switchTab(animeId, seasonNumber) {
     anime.activeTab = seasonNumber;
     const seasonData = anime.seasons.find(s => s.number === seasonNumber);
 
-    // Wenn wir die Folge noch nicht überprüft haben (sie steht noch auf dem Standardwert 12)
     if (seasonData && !seasonData.isVerified) {
         anime.isLoading = true;
         renderList();
@@ -132,7 +137,7 @@ function switchTab(animeId, seasonNumber) {
             .then(data => {
                 anime.isLoading = false;
                 seasonData.episodes = data.totalEpisodes;
-                seasonData.isVerified = true; // Markieren, damit wir nicht doppelt fragen müssen
+                seasonData.isVerified = true;
                 saveAndRender();
             }).catch(() => {
                 anime.isLoading = false;
@@ -142,6 +147,66 @@ function switchTab(animeId, seasonNumber) {
         saveAndRender();
     }
 }
+
+// --- NEUE FUNKTIONEN FÜR DEN "⚙️ BEARBEITEN"-MODUS ---
+
+function toggleEdit(id) {
+    const anime = animeList.find(a => a.id === id);
+    if (anime) {
+        anime.isEditing = !anime.isEditing;
+        saveAndRender();
+    }
+}
+
+function resyncAnime(id) {
+    const anime = animeList.find(a => a.id === id);
+    if (!anime) return;
+    
+    const newSlug = document.getElementById(`editSlug_${id}`).value.trim();
+    if (newSlug !== "") anime.slug = newSlug;
+    
+    anime.isLoading = true;
+    anime.isEditing = false;
+    renderList(); 
+    
+    fetch(`${API_BASE}?slug=${anime.slug}`)
+        .then(res => res.json())
+        .then(data => {
+            anime.isLoading = false;
+            anime.seasons = [];
+            for (let i = 1; i <= data.totalSeasons; i++) {
+                anime.seasons.push({ 
+                    number: i, 
+                    episodes: i === 1 ? data.totalEpisodes : 12,
+                    isVerified: i === 1 ? true : false
+                });
+            }
+            anime.activeTab = 1;
+            saveAndRender();
+        }).catch(() => {
+            anime.isLoading = false;
+            saveAndRender();
+        });
+}
+
+function saveManualEps(id, seasonNum) {
+    const anime = animeList.find(a => a.id === id);
+    if (!anime) return;
+    
+    const inputEps = document.getElementById(`editEps_${id}_${seasonNum}`).value;
+    let eps = parseInt(inputEps);
+    if (isNaN(eps) || eps < 1) eps = 1;
+    
+    const seasonData = anime.seasons.find(s => s.number === seasonNum);
+    if (seasonData) {
+        seasonData.episodes = eps;
+        seasonData.isVerified = true; 
+    }
+    anime.isEditing = false;
+    saveAndRender();
+}
+
+// ----------------------------------------------------
 
 function toggleEpisode(animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
@@ -216,14 +281,43 @@ function renderList() {
             tabsHtml += `<button class="tab-btn ${isActive}" onclick="switchTab(${anime.id}, ${s.number})">St. ${s.number}</button>`;
         });
 
-        let epGridHtml = '';
-        if (anime.isLoading) {
-            epGridHtml = '<div style="grid-column: span 6; text-align:center; color:#fa5252; font-size:13px; padding: 20px 0;">🔄 Synchronisiere mit AniWorld...</div>';
+        // HTML für den Bereich in der Mitte (Lädt, Bearbeiten oder Grid)
+        let contentAreaHtml = '';
+        
+        if (anime.isEditing) {
+            contentAreaHtml = `
+                <div style="padding: 15px 20px; background: rgba(0,0,0,0.2); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); margin-bottom: 15px;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:bold;">AniWorld Link-Name (Slug):</label>
+                        <div style="display:flex; gap:8px; margin-top:6px;">
+                            <input type="text" id="editSlug_${anime.id}" value="${anime.slug}" style="padding: 8px 12px; font-size:13px; flex-grow:1; background:var(--bg-main); color:white; border:1px solid var(--border-color); border-radius:8px;">
+                            <button onclick="resyncAnime(${anime.id})" style="padding: 8px 16px; background:var(--accent); color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">↻ Sync</button>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:bold;">Folgen in St. ${curSeason}:</label>
+                        <div style="display:flex; gap:8px; margin-top:6px;">
+                            <input type="number" id="editEps_${anime.id}_${curSeason}" value="${maxBoxen}" min="1" style="padding: 8px 12px; font-size:13px; width:80px; background:var(--bg-main); color:white; border:1px solid var(--border-color); border-radius:8px;">
+                            <button onclick="saveManualEps(${anime.id}, ${curSeason})" style="padding: 8px 16px; background:var(--success); color:#000; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">Speichern</button>
+                        </div>
+                    </div>
+                    <button onclick="toggleEdit(${anime.id})" style="width:100%; padding: 10px; background:transparent; color:var(--text-muted); border:1px solid var(--border-color); border-radius:8px; cursor:pointer; font-weight:bold;">Schließen</button>
+                </div>
+            `;
+        } else if (anime.isLoading) {
+            contentAreaHtml = '<div style="text-align:center; color:var(--accent); font-size:13px; padding: 30px 0; font-weight:600;">🔄 Synchronisiere mit AniWorld...</div>';
         } else {
+            let epGridHtml = '';
             for (let i = 1; i <= maxBoxen; i++) {
                 const isWatched = anime.watchedEpisodes.includes(`s${curSeason}e${i}`) ? 'watched' : '';
                 epGridHtml += `<button class="episode-badge ${isWatched}" onclick="toggleEpisode(${anime.id}, ${curSeason}, ${i})">${i}</button>`;
             }
+            contentAreaHtml = `
+                <div class="episode-box-title">Staffel ${curSeason} Episoden:</div>
+                <div class="episode-grid-container">
+                    <div class="episode-grid">${epGridHtml}</div>
+                </div>
+            `;
         }
 
         card.innerHTML = `
@@ -232,7 +326,7 @@ function renderList() {
                 <div class="anime-info">
                     <h3 class="anime-title">${anime.name}</h3>
                     <div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>
-                    <div class="anime-meta" style="font-size: 11px;">Haken Gesamt: 🏆 ${anime.watchedEpisodes.length}</div>
+                    <div class="anime-meta" style="font-size: 11px; margin-top:4px;">Haken Gesamt: 🏆 ${anime.watchedEpisodes.length}</div>
                 </div>
             </div>
 
@@ -244,15 +338,17 @@ function renderList() {
                 </div>
             </div>
 
-            <div class="episode-box-title">Staffel ${curSeason} Episoden:</div>
-            <div class="episode-grid-container">
-                <div class="episode-grid">${epGridHtml}</div>
-            </div>
+            ${contentAreaHtml}
             
             <div class="card-actions">
                 <a href="${streamUrl}" target="_blank" class="stream-link">St. ${curSeason} Folge ${nächsteFolge} schauen</a>
-                <a href="${searchUrl}" target="_blank" class="search-fallback">Auf AniWorld suchen</a>
-                <button onclick="removeAnime(${anime.id})" style="background:transparent; border:none; color:#555; font-size:11px; cursor:pointer; margin-top:5px;">Löschen</button>
+                <div style="display:flex; justify-content:space-between; margin-top:12px;">
+                    <a href="${searchUrl}" target="_blank" class="search-fallback">🔍 Auf AniWorld suchen</a>
+                    <div style="display:flex; gap:10px;">
+                        <button onclick="toggleEdit(${anime.id})" style="background:transparent; border:none; color:var(--text-muted); font-size:12px; cursor:pointer; font-weight:600;">⚙️ Bearbeiten</button>
+                        <button onclick="removeAnime(${anime.id})" style="background:transparent; border:none; color:#ff4757; font-size:12px; cursor:pointer; font-weight:600;">🗑️ Löschen</button>
+                    </div>
+                </div>
             </div>
         `;
         grid.appendChild(card);
@@ -267,10 +363,11 @@ function loadRecommendations() {
             recGrid.innerHTML = '';
             if (data.data) {
                 data.data.forEach(anime => {
-                    const title = anime.title;
+                    const jpTitle = anime.title;
+                    const engTitle = anime.title_english;
+                    const title = engTitle || jpTitle;
                     const slug = generateSlug(title);
                     const image = (anime.images && anime.images.jpg) ? anime.images.jpg.large_image_url : null;
-                    const totalEps = anime.episodes || null;
 
                     const posterHtml = image ? `<img class="anime-poster" src="${image}" alt="Poster">` : `<div class="placeholder-poster">📺</div>`;
 
