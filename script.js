@@ -184,5 +184,5 @@ document.addEventListener('click', function(e) {
         document.getElementById('autocompleteList').style.display = 'none';
     }
 });
-
+ 
 renderList();
