@@ -1,10 +1,9 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListUltimate')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListUltimateV2')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
-const doneTypingInterval = 500; // Erhöht auf 500ms für stabile API-Abfragen
+const doneTypingInterval = 500;
 
-// --- Live API Suche ---
 function showSuggestions() {
     clearTimeout(typingTimer);
     const input = document.getElementById('animeName').value.trim();
@@ -16,14 +15,13 @@ function showSuggestions() {
         return;
     }
 
-    // Visuelles Feedback: Zeige direkt an, dass im Hintergrund gesucht wird
     list.innerHTML = '<div class="autocomplete-info">🔍 Suche läuft...</div>';
     list.style.display = 'block';
 
     typingTimer = setTimeout(() => {
         fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
             .then(response => {
-                if (!response.ok) throw new Error("Rate Limit oder Serverfehler");
+                if (!response.ok) throw new Error("Rate Limit");
                 return response.json();
             })
             .then(data => {
@@ -32,9 +30,8 @@ function showSuggestions() {
                     data.data.forEach(anime => {
                         const title = anime.title;
                         const slug = generateSlug(title);
-                        // Sicherheitscheck: Falls Bildpfade in der API fehlen, nutzen wir null
                         const imageUrl = (anime.images && anime.images.jpg) ? anime.images.jpg.large_image_url : null;
-                        const totalEps = anime.episodes || null;
+                        const totalEps = anime.episodes || 12; // Falls null (laufend), standardmäßig erstmal 12 setzen
 
                         const item = document.createElement('div');
                         item.className = 'autocomplete-item';
@@ -72,14 +69,16 @@ function addAnime() {
 
     let newAnime;
     if (currentSelectedAnime && nameInput.value.trim() === currentSelectedAnime.name) {
+        // NEU: Wir legen eine Konfigurationskarte für die Staffeln an
+        const initialEps = currentSelectedAnime.totalEps || 12;
         newAnime = {
             id: Date.now(),
             name: currentSelectedAnime.name,
             slug: currentSelectedAnime.slug,
             image: currentSelectedAnime.image,
-            season: 1, // Standardmäßig mit Staffel 1 starten
-            totalEps: currentSelectedAnime.totalEps,
-            watchedEpisodes: [] // Format jetzt flexibel: ["s1e1", "s1e2", "s2e1"]
+            season: 1,
+            seasonConfigs: { 1: initialEps }, // Speichert { staffelNummer: maxFolgen }
+            watchedEpisodes: []
         };
     } else {
         let txt = nameInput.value.trim();
@@ -89,7 +88,7 @@ function addAnime() {
             slug: generateSlug(txt),
             image: null,
             season: 1,
-            totalEps: 12,
+            seasonConfigs: { 1: 12 },
             watchedEpisodes: []
         };
     }
@@ -106,13 +105,14 @@ function addAnimeFromData(name, slug, image, totalEps) {
         return;
     }
 
+    const initialEps = totalEps || 12;
     const newAnime = {
         id: Date.now(),
         name: name,
         slug: slug,
         image: image,
         season: 1,
-        totalEps: totalEps,
+        seasonConfigs: { 1: initialEps },
         watchedEpisodes: []
     };
 
@@ -120,12 +120,11 @@ function addAnimeFromData(name, slug, image, totalEps) {
     saveAndRender();
 }
 
-// Schaltet Episoden pro Staffel um (Nutzt Schlüssel-Format "s{Staffel}e{Episode}")
 function toggleEpisode(animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
 
-    const epKey = `s${seasonNum}e${epNum}`;
+    const epKey = `s${seasonNum}e${epKeyNum = epNum}`;
     const index = anime.watchedEpisodes.indexOf(epKey);
     
     if (index === -1) {
@@ -136,7 +135,6 @@ function toggleEpisode(animeId, seasonNum, epNum) {
     saveAndRender();
 }
 
-// Ändert die aktuelle Staffel des Animes
 function changeSeason(animeId, delta) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -145,7 +143,27 @@ function changeSeason(animeId, delta) {
     if (newSeason < 1) newSeason = 1;
     
     anime.season = newSeason;
+    
+    // Falls für die neue Staffel noch keine Folgenanzahl existiert, mit 12 initialisieren
+    if (!anime.seasonConfigs[newSeason]) {
+        anime.seasonConfigs[newSeason] = 12;
+    }
+    
     saveAndRender();
+}
+
+// NEU: Erlaubt es, die Folgenanzahl der aktuellen Staffel live im Kasten anzupassen
+function updateSeasonEps(animeId, seasonNum, value) {
+    const anime = animeList.find(a => a.id === animeId);
+    if (!anime) return;
+    
+    let eps = parseInt(value);
+    if (isNaN(eps) || eps < 1) eps = 1;
+    
+    anime.seasonConfigs[seasonNum] = eps;
+    localStorage.setItem('myAnimeListUltimateV2', JSON.stringify(animeList));
+    // Wir rendern nur die Liste neu, ohne den Fokus vom Input zu klauen
+    renderList(); 
 }
 
 function removeAnime(id) {
@@ -159,7 +177,7 @@ function changeSort() {
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListUltimate', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListUltimateV2', JSON.stringify(animeList));
     renderList();
 }
 
@@ -180,29 +198,19 @@ function renderList() {
     sortedList.forEach(anime => {
         const curSeason = anime.season || 1;
         
-        // Wie viele Boxen generieren wir für diese Staffel?
-        let maxBoxen = anime.totalEps;
-        if (!maxBoxen) {
-            // Endlos-Modus: Finde die höchste abgehakte Folge in der AKTUELLEN Staffel
-            let höchsteInStaffel = 0;
-            anime.watchedEpisodes.forEach(key => {
-                if (key.startsWith(`s${curSeason}e`)) {
-                    let ep = parseInt(key.split('e')[1]);
-                    if (ep > höchsteInStaffel) höchsteInStaffel = ep;
-                }
-            });
-            maxBoxen = Math.max(12, höchsteInStaffel + 6);
-        }
+        // NEU: Holt die exakte Folgenanzahl aus der Konfiguration dieser spezifischen Staffel
+        if (!anime.seasonConfigs) { anime.seasonConfigs = { 1: 12 }; } // Abwärtskompatibilität
+        const maxBoxen = anime.seasonConfigs[curSeason] || 12;
 
-        // Finde die nächste ungesehene Folge für die AKTUELLE Staffel heraus
+        // Nächste ungesehene Folge berechnen
         let nächsteFolge = 1;
         while (anime.watchedEpisodes.includes(`s${curSeason}e${nächsteFolge}`)) {
             nächsteFolge++;
         }
 
-        // Zähle geschaute Folgen NUR in dieser Staffel für den Ladebalken
+        // Ladebalken berechnen
         let geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
-        let prozent = anime.totalEps > 0 ? Math.round((geschauteInStaffel / anime.totalEps) * 100) : 0;
+        let prozent = Math.min(100, Math.round((geschauteInStaffel / maxBoxen) * 100));
 
         const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/staffel-${curSeason}/episode-${nächsteFolge}`;
         const searchUrl = `https://aniworld.to/support/suche?q=${encodeURIComponent(anime.name)}`;
@@ -210,7 +218,6 @@ function renderList() {
         const card = document.createElement('div');
         card.className = 'anime-card';
         
-        // Plakat-HTML generieren (Prüft auf null und setzt Fallback-Kachel um)
         const posterHtml = anime.image 
             ? `<img class="anime-poster" src="${anime.image}" alt="Poster">`
             : `<div class="placeholder-poster">📺</div>`;
@@ -226,11 +233,17 @@ function renderList() {
                 ${posterHtml}
                 <div class="anime-info">
                     <h3 class="anime-title">${anime.name}</h3>
-                    <div class="anime-meta">Staffel-Fortschritt: ${geschauteInStaffel} / ${anime.totalEps || '∞' }</div>
+                    <div class="anime-meta">Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen</div>
+                    
                     <div class="season-control">
-                        <span class="anime-meta"><b>Staffel ${curSeason}</b></span>
                         <button class="season-btn" onclick="changeSeason(${anime.id}, -1)">-</button>
+                        <span class="anime-meta"><b>Staffel ${curSeason}</b></span>
                         <button class="season-btn" onclick="changeSeason(${anime.id}, 1)">+</button>
+                    </div>
+
+                    <div class="episode-config-inline">
+                        <span>Folgen:</span>
+                        <input type="number" min="1" value="${maxBoxen}" oninput="updateSeasonEps(${anime.id}, ${curSeason}, this.value)">
                     </div>
                 </div>
             </div>
@@ -294,7 +307,7 @@ function loadRecommendations() {
                 });
             }
         })
-        .catch(err => console.error("Fehler beim Laden der Empfehlungen:", err));
+        .catch(err => console.error("Fehler bei Empfehlungen:", err));
 }
 
 document.addEventListener('click', function(e) {
@@ -305,4 +318,3 @@ document.addEventListener('click', function(e) {
 
 renderList();
 loadRecommendations();
-dRecommendations(); // Lädt beim Öffnen direkt die Trends
