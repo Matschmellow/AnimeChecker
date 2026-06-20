@@ -1,10 +1,10 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListPro')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListUltimate')) || [];
 let currentSelectedAnime = null;
-let currentSortCriteria = 'date_desc'; // Standard-Sortierung
+let currentSortCriteria = 'date_desc';
 let typingTimer;
-const doneTypingInterval = 400;
+const doneTypingInterval = 500; // Erhöht auf 500ms für stabile API-Abfragen
 
-// --- Live API Suche für das Eingabefeld ---
+// --- Live API Suche ---
 function showSuggestions() {
     clearTimeout(typingTimer);
     const input = document.getElementById('animeName').value.trim();
@@ -16,17 +16,24 @@ function showSuggestions() {
         return;
     }
 
+    // Visuelles Feedback: Zeige direkt an, dass im Hintergrund gesucht wird
+    list.innerHTML = '<div class="autocomplete-info">🔍 Suche läuft...</div>';
+    list.style.display = 'block';
+
     typingTimer = setTimeout(() => {
         fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) throw new Error("Rate Limit oder Serverfehler");
+                return response.json();
+            })
             .then(data => {
                 list.innerHTML = '';
                 if (data.data && data.data.length > 0) {
-                    list.style.display = 'block';
                     data.data.forEach(anime => {
                         const title = anime.title;
                         const slug = generateSlug(title);
-                        const imageUrl = anime.images.jpg.large_image_url;
+                        // Sicherheitscheck: Falls Bildpfade in der API fehlen, nutzen wir null
+                        const imageUrl = (anime.images && anime.images.jpg) ? anime.images.jpg.large_image_url : null;
                         const totalEps = anime.episodes || null;
 
                         const item = document.createElement('div');
@@ -36,10 +43,13 @@ function showSuggestions() {
                         list.appendChild(item);
                     });
                 } else {
-                    list.style.display = 'none';
+                    list.innerHTML = '<div class="autocomplete-info">Keine Ergebnisse gefunden</div>';
                 }
             })
-            .catch(err => console.error("Fehler bei Suche:", err));
+            .catch(err => {
+                console.error(err);
+                list.innerHTML = '<div class="autocomplete-info">⚠️ Zu schnell getippt. Warte kurz...</div>';
+            });
     }, doneTypingInterval);
 }
 
@@ -63,12 +73,13 @@ function addAnime() {
     let newAnime;
     if (currentSelectedAnime && nameInput.value.trim() === currentSelectedAnime.name) {
         newAnime = {
-            id: Date.now(), // Dient als ID und als Zeitstempel fürs Sortieren
+            id: Date.now(),
             name: currentSelectedAnime.name,
             slug: currentSelectedAnime.slug,
             image: currentSelectedAnime.image,
+            season: 1, // Standardmäßig mit Staffel 1 starten
             totalEps: currentSelectedAnime.totalEps,
-            watchedEpisodes: []
+            watchedEpisodes: [] // Format jetzt flexibel: ["s1e1", "s1e2", "s2e1"]
         };
     } else {
         let txt = nameInput.value.trim();
@@ -76,7 +87,8 @@ function addAnime() {
             id: Date.now(),
             name: txt,
             slug: generateSlug(txt),
-            image: '',
+            image: null,
+            season: 1,
             totalEps: 12,
             watchedEpisodes: []
         };
@@ -88,9 +100,7 @@ function addAnime() {
     saveAndRender();
 }
 
-// Ermöglicht es, Animes direkt aus den Empfehlungen per Klick hinzuzufügen
 function addAnimeFromData(name, slug, image, totalEps) {
-    // Prüfen, ob der Anime bereits auf der Liste steht
     if (animeList.some(a => a.slug === slug)) {
         alert("Diesen Anime hast du bereits auf deiner Liste!");
         return;
@@ -101,6 +111,7 @@ function addAnimeFromData(name, slug, image, totalEps) {
         name: name,
         slug: slug,
         image: image,
+        season: 1,
         totalEps: totalEps,
         watchedEpisodes: []
     };
@@ -109,16 +120,31 @@ function addAnimeFromData(name, slug, image, totalEps) {
     saveAndRender();
 }
 
-function toggleEpisode(animeId, epNum) {
+// Schaltet Episoden pro Staffel um (Nutzt Schlüssel-Format "s{Staffel}e{Episode}")
+function toggleEpisode(animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
 
-    const index = anime.watchedEpisodes.indexOf(epNum);
+    const epKey = `s${seasonNum}e${epNum}`;
+    const index = anime.watchedEpisodes.indexOf(epKey);
+    
     if (index === -1) {
-        anime.watchedEpisodes.push(epNum);
+        anime.watchedEpisodes.push(epKey);
     } else {
         anime.watchedEpisodes.splice(index, 1);
     }
+    saveAndRender();
+}
+
+// Ändert die aktuelle Staffel des Animes
+function changeSeason(animeId, delta) {
+    const anime = animeList.find(a => a.id === animeId);
+    if (!anime) return;
+    
+    let newSeason = anime.season + delta;
+    if (newSeason < 1) newSeason = 1;
+    
+    anime.season = newSeason;
     saveAndRender();
 }
 
@@ -127,14 +153,13 @@ function removeAnime(id) {
     saveAndRender();
 }
 
-// Wird aufgerufen, wenn der Nutzer das Sortier-Dropdown ändert
 function changeSort() {
     currentSortCriteria = document.getElementById('sortCriteria').value;
     renderList();
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListPro', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListUltimate', JSON.stringify(animeList));
     renderList();
 }
 
@@ -142,53 +167,71 @@ function renderList() {
     const grid = document.getElementById('animeGrid');
     grid.innerHTML = '';
 
-    // Wir erstellen eine Kopie der Liste, um das Original-Array im Speicher nicht permanent zu verdrehen
     let sortedList = [...animeList];
 
-    // --- Sortier-Logik ---
     if (currentSortCriteria === 'name_asc') {
-        sortedList.sort((a, b) => a.name.localeCompare(b.name)); // A-Z
+        sortedList.sort((a, b) => a.name.localeCompare(b.name));
     } else if (currentSortCriteria === 'progress_desc') {
-        sortedList.sort((a, b) => b.watchedEpisodes.length - a.watchedEpisodes.length); // Meiste Folgen zuerst
+        sortedList.sort((a, b) => b.watchedEpisodes.length - a.watchedEpisodes.length);
     } else {
-        sortedList.sort((a, b) => b.id - a.id); // Zuletzt hinzugefügt (höhere ID/Zeitstempel zuerst)
+        sortedList.sort((a, b) => b.id - a.id);
     }
 
     sortedList.forEach(anime => {
+        const curSeason = anime.season || 1;
+        
+        // Wie viele Boxen generieren wir für diese Staffel?
         let maxBoxen = anime.totalEps;
         if (!maxBoxen) {
-            let höchsteGeschaut = anime.watchedEpisodes.length > 0 ? Math.max(...anime.watchedEpisodes) : 0;
-            maxBoxen = Math.max(12, höchsteGeschaut + 6);
+            // Endlos-Modus: Finde die höchste abgehakte Folge in der AKTUELLEN Staffel
+            let höchsteInStaffel = 0;
+            anime.watchedEpisodes.forEach(key => {
+                if (key.startsWith(`s${curSeason}e`)) {
+                    let ep = parseInt(key.split('e')[1]);
+                    if (ep > höchsteInStaffel) höchsteInStaffel = ep;
+                }
+            });
+            maxBoxen = Math.max(12, höchsteInStaffel + 6);
         }
 
+        // Finde die nächste ungesehene Folge für die AKTUELLE Staffel heraus
         let nächsteFolge = 1;
-        while (anime.watchedEpisodes.includes(nächsteFolge)) {
+        while (anime.watchedEpisodes.includes(`s${curSeason}e${nächsteFolge}`)) {
             nächsteFolge++;
         }
 
-        let prozent = 0;
-        if (anime.totalEps > 0) {
-            prozent = Math.round((anime.watchedEpisodes.length / anime.totalEps) * 100);
-        }
+        // Zähle geschaute Folgen NUR in dieser Staffel für den Ladebalken
+        let geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
+        let prozent = anime.totalEps > 0 ? Math.round((geschauteInStaffel / anime.totalEps) * 100) : 0;
 
-        const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/staffel-1/episode-${nächsteFolge}`;
+        const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/staffel-${curSeason}/episode-${nächsteFolge}`;
         const searchUrl = `https://aniworld.to/support/suche?q=${encodeURIComponent(anime.name)}`;
 
         const card = document.createElement('div');
         card.className = 'anime-card';
         
+        // Plakat-HTML generieren (Prüft auf null und setzt Fallback-Kachel um)
+        const posterHtml = anime.image 
+            ? `<img class="anime-poster" src="${anime.image}" alt="Poster">`
+            : `<div class="placeholder-poster">📺</div>`;
+
         let epGridHtml = '';
         for (let i = 1; i <= maxBoxen; i++) {
-            const isWatched = anime.watchedEpisodes.includes(i) ? 'watched' : '';
-            epGridHtml += `<button class="episode-badge ${isWatched}" onclick="toggleEpisode(${anime.id}, ${i})">${i}</button>`;
+            const isWatched = anime.watchedEpisodes.includes(`s${curSeason}e${i}`) ? 'watched' : '';
+            epGridHtml += `<button class="episode-badge ${isWatched}" onclick="toggleEpisode(${anime.id}, ${curSeason}, ${i})">${i}</button>`;
         }
 
         card.innerHTML = `
             <div class="anime-header-block">
-                <img class="anime-poster" src="${anime.image || 'https://via.placeholder.com/80x115?text=No+Cover'}" alt="Poster">
+                ${posterHtml}
                 <div class="anime-info">
                     <h3 class="anime-title">${anime.name}</h3>
-                    <div class="anime-meta">Gesehen: ${anime.watchedEpisodes.length} / ${anime.totalEps || '∞'} Folgen</div>
+                    <div class="anime-meta">Staffel-Fortschritt: ${geschauteInStaffel} / ${anime.totalEps || '∞' }</div>
+                    <div class="season-control">
+                        <span class="anime-meta"><b>Staffel ${curSeason}</b></span>
+                        <button class="season-btn" onclick="changeSeason(${anime.id}, -1)">-</button>
+                        <button class="season-btn" onclick="changeSeason(${anime.id}, 1)">+</button>
+                    </div>
                 </div>
             </div>
 
@@ -198,7 +241,7 @@ function renderList() {
                 </div>
             </div>
 
-            <div class="episode-box-title">Episoden abhaken:</div>
+            <div class="episode-box-title">Staffel ${curSeason} Episoden:</div>
             <div class="episode-grid-container">
                 <div class="episode-grid">
                     ${epGridHtml}
@@ -206,7 +249,7 @@ function renderList() {
             </div>
             
             <div class="card-actions">
-                <a href="${streamUrl}" target="_blank" class="stream-link">Folge ${nächsteFolge} schauen</a>
+                <a href="${streamUrl}" target="_blank" class="stream-link">St. ${curSeason} Folge ${nächsteFolge} schauen</a>
                 <a href="${searchUrl}" target="_blank" class="search-fallback">Link kaputt? Auf AniWorld suchen</a>
                 <button onclick="removeAnime(${anime.id})" style="background:transparent; border:none; color:#555; font-size:11px; cursor:pointer; margin-top:5px;">Anime Löschen</button>
             </div>
@@ -215,11 +258,8 @@ function renderList() {
     });
 }
 
-// --- NEU: Empfehlungs-Engine laden ---
 function loadRecommendations() {
     const recGrid = document.getElementById('recommendationsGrid');
-    
-    // Wir holen uns die aktuell globalen Top-Animes über die API
     fetch('https://api.jikan.moe/v4/top/anime?limit=4')
         .then(response => response.json())
         .then(data => {
@@ -228,14 +268,18 @@ function loadRecommendations() {
                 data.data.forEach(anime => {
                     const title = anime.title;
                     const slug = generateSlug(title);
-                    const image = anime.images.jpg.large_image_url;
+                    const image = (anime.images && anime.images.jpg) ? anime.images.jpg.large_image_url : null;
                     const totalEps = anime.episodes || null;
+
+                    const posterHtml = image 
+                        ? `<img class="anime-poster" src="${image}" alt="Poster">`
+                        : `<div class="placeholder-poster">📺</div>`;
 
                     const card = document.createElement('div');
                     card.className = 'anime-card';
                     card.innerHTML = `
                         <div class="anime-header-block" style="padding-bottom: 5px;">
-                            <img class="anime-poster" src="${image}" alt="Poster">
+                            ${posterHtml}
                             <div class="anime-info">
                                 <h3 class="anime-title">${title}</h3>
                                 <div class="anime-meta">Score: ⭐ ${anime.score || 'N/A'}</div>
@@ -253,13 +297,12 @@ function loadRecommendations() {
         .catch(err => console.error("Fehler beim Laden der Empfehlungen:", err));
 }
 
-// Schließt das Dropdown beim Klicken außerhalb
 document.addEventListener('click', function(e) {
     if (e.target.id !== 'animeName') {
         document.getElementById('autocompleteList').style.display = 'none';
     }
 });
 
-// App-Start
 renderList();
-loadRecommendations(); // Lädt beim Öffnen direkt die Trends
+loadRecommendations();
+dRecommendations(); // Lädt beim Öffnen direkt die Trends
