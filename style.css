@@ -109,7 +109,6 @@ input:focus, select:focus {
 
 .autocomplete-item:hover { background-color: var(--accent-color); }
 
-/* Für "Suche läuft..." Anzeige */
 .autocomplete-info {
     padding: 14px;
     color: var(--text-muted);
@@ -162,7 +161,6 @@ button:hover { opacity: 0.9; }
     background-color: #232333;
 }
 
-/* NEU: Styling für den eleganten Poster-Platzhalter */
 .placeholder-poster {
     width: 80px;
     height: 115px;
@@ -195,24 +193,43 @@ button:hover { opacity: 0.9; }
     margin-bottom: 2px;
 }
 
-/* NEU: Styling für die neue Staffelsteuerung */
 .season-control {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
     margin-top: 5px;
+    margin-bottom: 8px;
 }
+
 .season-btn {
     background-color: #232333;
     color: white;
     border: none;
-    padding: 3px 8px;
-    border-radius: 4px;
+    padding: 4px 10px;
+    border-radius: 6px;
     cursor: pointer;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: bold;
 }
 .season-btn:hover { background-color: var(--accent-color); }
+
+/* NEU: Kompaktes Eingabefeld für die Folgen-Konfiguration */
+.episode-config-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.episode-config-inline input {
+    width: 55px;
+    padding: 4px 6px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid #323247;
+    text-align: center;
+}
 
 .progress-container {
     padding: 0 15px;
