@@ -50,14 +50,13 @@ function showSuggestions() {
     }, doneTypingInterval);
 }
 
-// NEU: Der schlaue Filter, der Jahreszahlen (2011) automatisch entfernt!
 function generateSlug(title) {
     return title.toLowerCase()
-        .replace(/\([^)]+\)/g, '') // Entfernt ALLES in Klammern, z.B. (2011)
-        .replace(/[^a-z0-9\s-]/g, '') // Sonderzeichen weg
-        .trim() // Leerzeichen am Ende weg
-        .replace(/\s+/g, '-') // Leerzeichen zu Bindestrich
-        .replace(/-+/g, '-'); // Doppelte Bindestriche weg
+        .replace(/\([^)]+\)/g, '') 
+        .replace(/[^a-z0-9\s-]/g, '') 
+        .trim() 
+        .replace(/\s+/g, '-') 
+        .replace(/-+/g, '-'); 
 }
 
 function selectAnime(name, slug, image) {
@@ -66,11 +65,13 @@ function selectAnime(name, slug, image) {
     document.getElementById('autocompleteList').style.display = 'none';
 }
 
-function addAnime() {
+// FIX: manualData erlaubt es jetzt, Daten direkt unter Umgehung des Textfelds einzuspeisen (Wichtig für Top-Animes)
+function addAnime(manualData = null) {
     const nameInput = document.getElementById('animeName');
-    if (nameInput.value.trim() === '') return;
+    
+    if (!manualData && nameInput.value.trim() === '') return;
 
-    let animeData = currentSelectedAnime || { 
+    let animeData = manualData || currentSelectedAnime || { 
         name: nameInput.value.trim(), 
         slug: generateSlug(nameInput.value.trim()), 
         image: null 
@@ -83,7 +84,7 @@ function addAnime() {
         image: animeData.image,
         activeTab: 1,
         isLoading: true,
-        isEditing: false, // NEU: Bearbeitungs-Modus
+        isEditing: false,
         seasons: [{ number: 1, episodes: 12 }],
         watchedEpisodes: []
     };
@@ -94,7 +95,11 @@ function addAnime() {
     saveAndRender();
 
     fetch(`${API_BASE}?slug=${newAnime.slug}`)
-        .then(res => res.json())
+        .then(res => {
+            // FIX: Wenn der Server 404 schickt, brechen wir hier sofort ab!
+            if (!res.ok) throw new Error("Nicht auf AniWorld gefunden");
+            return res.json();
+        })
         .then(data => {
             const anime = animeList.find(a => a.id === newAnime.id);
             if (anime) {
@@ -110,15 +115,20 @@ function addAnime() {
                 saveAndRender();
             }
         }).catch(() => {
-            const anime = animeList.find(a => a.id === newAnime.id);
-            if (anime) { anime.isLoading = false; saveAndRender(); }
+            // FIX: Aus der Liste löschen und Warnung ausgeben, wenn es den Anime auf AniWorld nicht gibt!
+            alert(`⚠️ "${newAnime.name}" existiert nicht auf AniWorld!\nÜberprüfe eventuell im "Bearbeiten"-Modus die Schreibweise im Link.`);
+            animeList = animeList.filter(a => a.id !== newAnime.id);
+            saveAndRender();
         });
 }
 
+// FIX: Ruft jetzt addAnime korrekt mit den übertragenen Objektdaten auf
 function addAnimeFromData(name, slug, image) {
-    if (animeList.some(a => a.slug === slug)) return;
-    currentSelectedAnime = { name, slug, image };
-    addAnime();
+    if (animeList.some(a => a.slug === slug)) {
+        alert("Diesen Anime hast du bereits auf deiner Liste!");
+        return;
+    }
+    addAnime({ name, slug, image });
 }
 
 function switchTab(animeId, seasonNumber) {
@@ -133,7 +143,10 @@ function switchTab(animeId, seasonNumber) {
         renderList();
 
         fetch(`${API_BASE}?slug=${anime.slug}&season=${seasonNumber}`)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error("Staffel nicht gefunden");
+                return res.json();
+            })
             .then(data => {
                 anime.isLoading = false;
                 seasonData.episodes = data.totalEpisodes;
@@ -141,14 +154,13 @@ function switchTab(animeId, seasonNumber) {
                 saveAndRender();
             }).catch(() => {
                 anime.isLoading = false;
+                seasonData.isVerified = true; // Sperren, damit nicht endlos geladen wird
                 renderList();
             });
     } else {
         saveAndRender();
     }
 }
-
-// --- NEUE FUNKTIONEN FÜR DEN "⚙️ BEARBEITEN"-MODUS ---
 
 function toggleEdit(id) {
     const anime = animeList.find(a => a.id === id);
@@ -170,7 +182,10 @@ function resyncAnime(id) {
     renderList(); 
     
     fetch(`${API_BASE}?slug=${anime.slug}`)
-        .then(res => res.json())
+        .then(res => {
+            if (!res.ok) throw new Error("404");
+            return res.json();
+        })
         .then(data => {
             anime.isLoading = false;
             anime.seasons = [];
@@ -184,6 +199,7 @@ function resyncAnime(id) {
             anime.activeTab = 1;
             saveAndRender();
         }).catch(() => {
+            alert("❌ Synchronisierung fehlgeschlagen. Link-Name existiert vermutlich nicht auf AniWorld.");
             anime.isLoading = false;
             saveAndRender();
         });
@@ -205,8 +221,6 @@ function saveManualEps(id, seasonNum) {
     anime.isEditing = false;
     saveAndRender();
 }
-
-// ----------------------------------------------------
 
 function toggleEpisode(animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
@@ -240,6 +254,16 @@ function saveAndRender() {
 
 function renderList() {
     const grid = document.getElementById('animeGrid');
+    
+    // FIX: Vor dem Leeren des Grids merken wir uns die exakte Scroll-Position JEDES Episoden-Containers!
+    const scrollPositions = {};
+    animeList.forEach(anime => {
+        const container = document.getElementById(`epScroll_${anime.id}`);
+        if (container) {
+            scrollPositions[anime.id] = container.scrollTop;
+        }
+    });
+
     grid.innerHTML = '';
 
     let sortedList = [...animeList];
@@ -281,7 +305,6 @@ function renderList() {
             tabsHtml += `<button class="tab-btn ${isActive}" onclick="switchTab(${anime.id}, ${s.number})">St. ${s.number}</button>`;
         });
 
-        // HTML für den Bereich in der Mitte (Lädt, Bearbeiten oder Grid)
         let contentAreaHtml = '';
         
         if (anime.isEditing) {
@@ -312,9 +335,10 @@ function renderList() {
                 const isWatched = anime.watchedEpisodes.includes(`s${curSeason}e${i}`) ? 'watched' : '';
                 epGridHtml += `<button class="episode-badge ${isWatched}" onclick="toggleEpisode(${anime.id}, ${curSeason}, ${i})">${i}</button>`;
             }
+            // FIX: Wir weisen dem Container eine eindeutige ID zu (epScroll_${anime.id})
             contentAreaHtml = `
                 <div class="episode-box-title">Staffel ${curSeason} Episoden:</div>
-                <div class="episode-grid-container">
+                <div class="episode-grid-container" id="epScroll_${anime.id}">
                     <div class="episode-grid">${epGridHtml}</div>
                 </div>
             `;
@@ -352,6 +376,14 @@ function renderList() {
             </div>
         `;
         grid.appendChild(card);
+    });
+
+    // FIX: Nachdem das Grid neu gezeichnet wurde, setzen wir den Scrollbalken blitzschnell auf den gemerkten Wert zurück!
+    animeList.forEach(anime => {
+        const container = document.getElementById(`epScroll_${anime.id}`);
+        if (container && scrollPositions[anime.id]) {
+            container.scrollTop = scrollPositions[anime.id];
+        }
     });
 }
 
@@ -399,4 +431,3 @@ document.addEventListener('click', function(e) {
 
 renderList();
 loadRecommendations();
-
