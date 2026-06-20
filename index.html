@@ -3,23 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MyAniList - Pro</title>
+    <title>MyAniList - Dashboard</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <h1>Meine Anime Liste</h1>
         
-        <div class="input-section">
-            <div class="input-wrapper">
-                <input type="text" id="animeName" placeholder="Anime suchen (mind. 3 Buchstaben)..." onkeyup="showSuggestions()" autocomplete="off">
-                <div id="autocompleteList" class="autocomplete-list"></div>
+        <div class="control-panel">
+            <div class="input-section">
+                <div class="input-wrapper">
+                    <input type="text" id="animeName" placeholder="Anime suchen..." onkeyup="showSuggestions()" autocomplete="off">
+                    <div id="autocompleteList" class="autocomplete-list"></div>
+                </div>
+                <button onclick="addAnime()">Hinzufügen</button>
             </div>
-            <button onclick="addAnime()">Hinzufügen</button>
+
+            <div class="sort-section">
+                <label for="sortCriteria">Sortieren nach:</label>
+                <select id="sortCriteria" onchange="changeSort()">
+                    <option value="date_desc">Zuletzt hinzugefügt</option>
+                    <option value="name_asc">Alphabetisch (A-Z)</option>
+                    <option value="progress_desc">Meister Fortschritt</option>
+                </select>
+            </div>
         </div>
 
         <div id="animeGrid" class="anime-grid">
             </div>
+
+        <div class="recommendations-container">
+            <h2>Vorschläge für dich</h2>
+            <div id="recommendationsGrid" class="anime-grid">
+                </div>
+        </div>
     </div>
     <script src="script.js"></script>
 </body>
