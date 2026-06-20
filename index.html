@@ -11,13 +11,18 @@
         <h1>Meine Anime Liste</h1>
         
         <div class="input-section">
-            <input type="text" id="animeName" placeholder="Anime Name (z.B. Jujutsu Kaisen)">
-            <input type="number" id="currentEpisode" placeholder="Aktuelle Folge" min="1" value="1">
+            <div class="input-wrapper">
+                <input type="text" id="animeName" placeholder="Anime Name (z.B. Jujutsu Kaisen)" onkeyup="showSuggestions()" autocomplete="off">
+                <div id="autocompleteList" class="autocomplete-list"></div>
+            </div>
+            
+            <input type="number" id="currentEpisode" placeholder="Folge" min="1" value="1">
             <button onclick="addAnime()">Hinzufügen</button>
         </div>
 
         <div id="animeGrid" class="anime-grid">
-            </div>
+            <!-- Hier landen die Animes -->
+        </div>
     </div>
     <script src="script.js"></script>
 </body>
