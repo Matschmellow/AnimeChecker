@@ -1,4 +1,4 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV2')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV3')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
@@ -65,12 +65,11 @@ function selectAnime(name, slug, image) {
     document.getElementById('autocompleteList').style.display = 'none';
 }
 
-function addAnime() {
+function addAnime(manualData = null) {
     const nameInput = document.getElementById('animeName');
-    
-    if (!currentSelectedAnime && nameInput.value.trim() === '') return;
+    if (!manualData && nameInput.value.trim() === '') return;
 
-    let animeData = currentSelectedAnime || { 
+    let animeData = manualData || currentSelectedAnime || { 
         name: nameInput.value.trim(), 
         slug: generateSlug(nameInput.value.trim()), 
         image: null 
@@ -94,7 +93,6 @@ function addAnime() {
     currentSelectedAnime = null;
     saveAndRender();
 
-    // Starte automatische Synchronisierung mit AniWorld & Jikan-Backup
     fetch(`${API_BASE}?slug=${newAnime.slug}`)
         .then(res => res.json())
         .then(data => {
@@ -104,19 +102,8 @@ function addAnime() {
             anime.isLoading = false;
 
             if (data.exists === false) {
-                // Wenn AniWorld blockiert, nutzen wir die Jikan-API als unfehlbares Backup!
-                fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name)}&limit=1`)
-                    .then(r => r.json())
-                    .then(jData => {
-                        if(jData.data && jData.data.length > 0) {
-                            anime.seasons = [{ number: 1, episodes: jData.data[0].episodes || 12, isVerified: true }];
-                        }
-                        anime.hasWarning = true;
-                        saveAndRender();
-                    }).catch(() => {
-                        anime.hasWarning = true;
-                        saveAndRender();
-                    });
+                anime.hasWarning = true;
+                saveAndRender();
             } else {
                 anime.seasons = [];
                 const maxS = data.totalSeasons || 1;
@@ -141,8 +128,7 @@ function addAnimeFromData(name, slug, image) {
         alert("Diesen Anime hast du bereits auf deiner Liste!");
         return;
     }
-    currentSelectedAnime = { name, slug, image };
-    addAnime();
+    addAnime({ name, slug, image });
 }
 
 function switchTab(animeId, seasonNumber) {
@@ -162,19 +148,23 @@ function switchTab(animeId, seasonNumber) {
                 anime.isLoading = false;
                 if(data.exists !== false && !data.fallback) {
                     seasonData.episodes = data.totalEpisodes;
+                    seasonData.isVerified = true;
+                    saveAndRender();
                 } else {
-                    // Fallback-Abfrage über Jikan, falls die Staffel-Verifizierung hakt
+                    // Jikan Backup Fallback bei Blockade
                     fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name + " Season " + seasonNumber)}&limit=1`)
                         .then(r => r.json())
                         .then(jData => {
                             if(jData.data && jData.data.length > 0) {
                                 seasonData.episodes = jData.data[0].episodes || 12;
                             }
-                            renderList();
-                        }).catch(() => renderList());
+                            seasonData.isVerified = true;
+                            saveAndRender(); // Daten permanent sichern
+                        }).catch(() => {
+                            seasonData.isVerified = true;
+                            saveAndRender();
+                        });
                 }
-                seasonData.isVerified = true;
-                saveAndRender();
             }).catch(() => {
                 anime.isLoading = false;
                 seasonData.isVerified = true;
@@ -185,26 +175,17 @@ function switchTab(animeId, seasonNumber) {
     }
 }
 
-// --- AUTOMATION: Klick-Tracking-Funktion ---
 function watchEpisodeAuto(animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
 
     const epKey = `s${seasonNum}e${epNum}`;
-    
-    // Hakt die Folge automatisch im Datensatz ab
     if (!anime.watchedEpisodes.includes(epKey)) {
         anime.watchedEpisodes.push(epKey);
     }
     
-    // Direkt im Speicher sichern
-    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
-    
-    // UX-Optimierung: Da das iPad flüssig in den neuen Streaming-Tab wechseln soll,
-    // verzögern wir das visuelle Update der Kacheln um 300ms im Hintergrund.
-    setTimeout(() => {
-        renderList();
-    }, 300);
+    localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
+    setTimeout(() => { renderList(); }, 300);
 }
 
 function toggleEdit(id) {
@@ -297,7 +278,7 @@ function changeSort() {
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
     renderList();
 }
 
