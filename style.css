@@ -27,11 +27,24 @@ h1 {
     letter-spacing: 1px;
 }
 
+/* Flexbox-Layout für die obere Leiste */
+.control-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    background-color: var(--card-bg);
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #232333;
+    flex-wrap: wrap;
+}
+
 .input-section {
     display: flex;
     gap: 10px;
-    margin-bottom: 40px;
-    justify-content: center;
+    flex-grow: 1;
 }
 
 .input-wrapper {
@@ -40,21 +53,39 @@ h1 {
     max-width: 400px;
 }
 
-input {
+input, select {
     width: 100%;
     box-sizing: border-box;
     padding: 14px;
     border: 2px solid #232333;
     border-radius: 10px;
-    background-color: var(--card-bg);
+    background-color: #0b0b0e;
     color: var(--text-color);
     font-size: 16px;
     transition: 0.2s;
 }
 
-input:focus {
+input:focus, select:focus {
     border-color: var(--accent-color);
     outline: none;
+}
+
+/* Styling für den Sortier-Bereich */
+.sort-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sort-section label {
+    font-size: 14px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.sort-section select {
+    width: 200px;
+    cursor: pointer;
 }
 
 .autocomplete-list {
@@ -78,9 +109,7 @@ input:focus {
     border-bottom: 1px solid #14141f;
 }
 
-.autocomplete-item:hover {
-    background-color: var(--accent-color);
-}
+.autocomplete-item:hover { background-color: var(--accent-color); }
 
 button {
     padding: 14px 24px;
@@ -96,14 +125,13 @@ button {
 
 button:hover { opacity: 0.9; }
 
-/* Das große Dashboard Grid */
 .anime-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 25px;
+    margin-bottom: 5px;
 }
 
-/* Die neue, professionelle Anime-Karte */
 .anime-card {
     background-color: var(--card-bg);
     border-radius: 16px;
@@ -146,7 +174,6 @@ button:hover { opacity: 0.9; }
     color: var(--text-muted);
 }
 
-/* Fortschrittsbalken */
 .progress-container {
     padding: 0 15px;
     margin-bottom: 10px;
@@ -164,7 +191,6 @@ button:hover { opacity: 0.9; }
     transition: width 0.3s ease;
 }
 
-/* Das neue Episoden-Auswahl-Grid */
 .episode-box-title {
     font-size: 12px;
     text-transform: uppercase;
@@ -196,20 +222,13 @@ button:hover { opacity: 0.9; }
     font-size: 13px;
     font-weight: bold;
     cursor: pointer;
-    transition: 0.15s;
 }
 
-.episode-badge:hover {
-    background-color: #323247;
-}
-
-/* Wenn eine einzelne Folge geschaut wurde */
 .episode-badge.watched {
     background-color: var(--success-color);
     color: #0b0b0e;
 }
 
-/* Action-Buttons unten */
 .card-actions {
     padding: 15px;
     margin-top: auto;
@@ -236,4 +255,33 @@ button:hover { opacity: 0.9; }
     color: var(--text-muted);
     font-size: 12px;
 }
-.search-fallback:hover { color: var(--accent-color); }
+
+/* NEU: Styling für den Empfehlungsbereich */
+.recommendations-container {
+    margin-top: 60px;
+    border-top: 2px dashed #232333;
+    padding-top: 40px;
+}
+
+.recommendations-container h2 {
+    color: var(--text-color);
+    font-size: 1.5em;
+    margin-bottom: 20px;
+}
+
+.recommendation-btn {
+    background-color: #232333;
+    color: var(--text-color);
+    border: 1px solid #323247;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.2s;
+}
+.recommendation-btn:hover {
+    background-color: var(--success-color);
+    color: #0b0b0e;
+    border-color: var(--success-color);
+}
