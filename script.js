@@ -282,7 +282,6 @@ function removeAnime(id) {
     saveAndRender();
 }
 
-// NEU: Hilfsfunktion, um zu prüfen, ob die AKTUELL GEÖFFNETE Staffel komplett fertig geschaut wurde
 function isCurrentSeasonFinished(anime) {
     if (anime.isLoading || !anime.seasons) return false;
     const curSeason = anime.activeTab || 1;
@@ -299,7 +298,7 @@ function changeSort() {
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListFullstackV1', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
     renderList();
 }
 
@@ -316,10 +315,7 @@ function renderList() {
 
     grid.innerHTML = '';
 
-    // --- NEU: Erweiterter Sortier-Algorithmus ---
-    // Wir sortieren das Array zuerst nach Kriterium, und schieben "beendete" Staffeln danach gnadenlos nach hinten!
     let sortedList = [...animeList];
-    
     if (currentSortCriteria === 'name_asc') {
         sortedList.sort((a, b) => a.name.localeCompare(b.name));
     } else if (currentSortCriteria === 'progress_desc') {
@@ -328,11 +324,10 @@ function renderList() {
         sortedList.sort((a, b) => b.id - a.id);
     }
 
-    // Jetzt der Trick: Fertige Animes fliegen ans Ende
     sortedList.sort((a, b) => {
         const aDone = isCurrentSeasonFinished(a) ? 1 : 0;
         const bDone = isCurrentSeasonFinished(b) ? 1 : 0;
-        return aDone - bDone; // 0 kommt vor 1, sprich: unfertige kommen vor fertigen!
+        return aDone - bDone; 
     });
 
     sortedList.forEach(anime => {
@@ -357,7 +352,6 @@ function renderList() {
         const card = document.createElement('div');
         card.className = 'anime-card';
         
-        // NEU: Wenn fertig, bleichen wir die Karte dezent aus, um den Fokus auf die aktiven Serien zu legen
         if (isFinished) {
             card.style.opacity = "0.45";
             card.style.filter = "saturate(0.7)";
@@ -378,7 +372,6 @@ function renderList() {
             ? `<div style="color: #ffaa00; font-size: 11px; margin-top: 4px; font-weight: bold;">⚠️ Link unbestätigt (Backup aktiv)</div>` 
             : '';
 
-        // NEU: Ein kleiner, stylischer Badge-Text im Header, falls fertig!
         const statusMetaHtml = isFinished 
             ? `<div style="color: var(--success); font-weight: 800; font-size: 12px; margin-top: 4px;">🎉 STAFFEL BEENDET!</div>`
             : `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>`;
@@ -421,10 +414,23 @@ function renderList() {
             `;
         }
 
-        // NEU: Wenn fertig, ändert sich der große rote Button zu einem grünen "Erneut anschauen"-Button oder Link zur nächsten Staffel
-        const actionButtonHtml = isFinished
-            ? `<a href="https://aniworld.to/anime/stream/${anime.slug}/staffel-${curSeason + 1}" target="_blank" class="stream-link" style="background-color: var(--success); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.2);" onclick="switchTab(${anime.id}, ${curSeason + 1})">Nächste Staffel checken 🎉</a>`
-            : `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curSeason}, ${nächsteFolge})">St. ${curSeason} Folge ${nächsteFolge} schauen</a>`;
+        // --- NEU: Dynamische und fehlerfreie Button-Logik ---
+        let actionButtonHtml = '';
+        if (isFinished) {
+            // Wir prüfen, ob auf AniWorld überhaupt noch eine Folgestaffel existiert
+            const totalAvailableSeasons = anime.seasons ? anime.seasons.length : 1;
+            
+            if (curSeason < totalAvailableSeasons) {
+                // Es gibt eine Folgestaffel -> Button erlaubt das Weiterklicken
+                actionButtonHtml = `<button class="stream-link" style="width:100%; border:none; background-color: var(--success); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.2);" onclick="switchTab(${anime.id}, ${curSeason + 1})">Nächste Staffel checken 🎉</button>`;
+            } else {
+                // Es gibt KEINE weitere Staffel mehr -> Der Button wird deaktiviert und feiert das Ende der Serie!
+                actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #gold, #d4af37); background-color: #d4af37; color: #000; cursor: default; box-shadow: none; font-weight:800; text-shadow: 0 1px 2px rgba(255,255,255,0.4);">🏆 SERIE KOMPLETT BEENDET!</div>`;
+            }
+        } else {
+            // Normaler Fall: Serie läuft noch
+            actionButtonHtml = `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curSeason}, ${nächsteFolge})">St. ${curSeason} Folge ${nächsteFolge} schauen</a>`;
+        }
 
         card.innerHTML = `
             <div class="anime-header-block">
