@@ -3,40 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MyAniList - Pro Dashboard</title>
+    <title>MyAniList - Dashboard</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
-        <h1>Meine Anime Liste</h1>
+        <header class="app-header">
+            <h1>MyAniList</h1>
+            <p class="subtitle">Dein persönliches Anime-Streaming-Dashboard</p>
+        </header>
         
         <div class="control-panel">
             <div class="input-section">
                 <div class="input-wrapper">
-                    <input type="text" id="animeName" placeholder="Anime suchen..." onkeyup="showSuggestions()" autocomplete="off">
+                    <input type="text" id="animeName" placeholder="Anime suchen oder eintippen..." onkeyup="showSuggestions()" autocomplete="off">
                     <div id="autocompleteList" class="autocomplete-list"></div>
                 </div>
-                <button onclick="addAnime()">Hinzufügen</button>
+                <button class="btn-primary" onclick="addAnime()">Hinzufügen</button>
             </div>
 
             <div class="sort-section">
-                <label for="sortCriteria">Sortieren nach:</label>
+                <span>Sortieren</span>
                 <select id="sortCriteria" onchange="changeSort()">
                     <option value="date_desc">Zuletzt hinzugefügt</option>
                     <option value="name_asc">Alphabetisch (A-Z)</option>
-                    <option value="progress_desc">Meister Fortschritt</option>
+                    <option value="progress_desc">Gesamtfortschritt</option>
                 </select>
             </div>
         </div>
 
-        <div id="animeGrid" class="anime-grid">
-            </div>
+        <main>
+            <div id="animeGrid" class="anime-grid">
+                </div>
+        </main>
 
-        <div class="recommendations-container">
+        <section class="recommendations-container">
             <h2>Vorschläge für dich</h2>
             <div id="recommendationsGrid" class="anime-grid">
                 </div>
-        </div>
+        </section>
     </div>
     <script src="script.js"></script>
 </body>
