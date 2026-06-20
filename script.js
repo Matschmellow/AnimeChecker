@@ -1,4 +1,4 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV1')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV2')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
@@ -65,13 +65,12 @@ function selectAnime(name, slug, image) {
     document.getElementById('autocompleteList').style.display = 'none';
 }
 
-// FIX: manualData erlaubt es jetzt, Daten direkt unter Umgehung des Textfelds einzuspeisen (Wichtig für Top-Animes)
-function addAnime(manualData = null) {
+function addAnime() {
     const nameInput = document.getElementById('animeName');
     
-    if (!manualData && nameInput.value.trim() === '') return;
+    if (!currentSelectedAnime && nameInput.value.trim() === '') return;
 
-    let animeData = manualData || currentSelectedAnime || { 
+    let animeData = currentSelectedAnime || { 
         name: nameInput.value.trim(), 
         slug: generateSlug(nameInput.value.trim()), 
         image: null 
@@ -85,6 +84,7 @@ function addAnime(manualData = null) {
         activeTab: 1,
         isLoading: true,
         isEditing: false,
+        hasWarning: false,
         seasons: [{ number: 1, episodes: 12 }],
         watchedEpisodes: []
     };
@@ -94,41 +94,55 @@ function addAnime(manualData = null) {
     currentSelectedAnime = null;
     saveAndRender();
 
+    // Starte automatische Synchronisierung mit AniWorld & Jikan-Backup
     fetch(`${API_BASE}?slug=${newAnime.slug}`)
-        .then(res => {
-            // FIX: Wenn der Server 404 schickt, brechen wir hier sofort ab!
-            if (!res.ok) throw new Error("Nicht auf AniWorld gefunden");
-            return res.json();
-        })
+        .then(res => res.json())
         .then(data => {
             const anime = animeList.find(a => a.id === newAnime.id);
-            if (anime) {
-                anime.isLoading = false;
+            if (!anime) return;
+            
+            anime.isLoading = false;
+
+            if (data.exists === false) {
+                // Wenn AniWorld blockiert, nutzen wir die Jikan-API als unfehlbares Backup!
+                fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name)}&limit=1`)
+                    .then(r => r.json())
+                    .then(jData => {
+                        if(jData.data && jData.data.length > 0) {
+                            anime.seasons = [{ number: 1, episodes: jData.data[0].episodes || 12, isVerified: true }];
+                        }
+                        anime.hasWarning = true;
+                        saveAndRender();
+                    }).catch(() => {
+                        anime.hasWarning = true;
+                        saveAndRender();
+                    });
+            } else {
                 anime.seasons = [];
-                for (let i = 1; i <= data.totalSeasons; i++) {
+                const maxS = data.totalSeasons || 1;
+                for (let i = 1; i <= maxS; i++) {
                     anime.seasons.push({ 
                         number: i, 
-                        episodes: i === 1 ? data.totalEpisodes : 12,
-                        isVerified: i === 1 ? true : false
+                        episodes: i === 1 ? (data.totalEpisodes || 12) : 12,
+                        isVerified: i === 1 ? !data.fallback : false
                     });
                 }
+                if (data.fallback) anime.hasWarning = true;
                 saveAndRender();
             }
         }).catch(() => {
-            // FIX: Aus der Liste löschen und Warnung ausgeben, wenn es den Anime auf AniWorld nicht gibt!
-            alert(`⚠️ "${newAnime.name}" existiert nicht auf AniWorld!\nÜberprüfe eventuell im "Bearbeiten"-Modus die Schreibweise im Link.`);
-            animeList = animeList.filter(a => a.id !== newAnime.id);
-            saveAndRender();
+            const anime = animeList.find(a => a.id === newAnime.id);
+            if (anime) { anime.isLoading = false; anime.hasWarning = true; saveAndRender(); }
         });
 }
 
-// FIX: Ruft jetzt addAnime korrekt mit den übertragenen Objektdaten auf
 function addAnimeFromData(name, slug, image) {
     if (animeList.some(a => a.slug === slug)) {
         alert("Diesen Anime hast du bereits auf deiner Liste!");
         return;
     }
-    addAnime({ name, slug, image });
+    currentSelectedAnime = { name, slug, image };
+    addAnime();
 }
 
 function switchTab(animeId, seasonNumber) {
@@ -143,23 +157,54 @@ function switchTab(animeId, seasonNumber) {
         renderList();
 
         fetch(`${API_BASE}?slug=${anime.slug}&season=${seasonNumber}`)
-            .then(res => {
-                if (!res.ok) throw new Error("Staffel nicht gefunden");
-                return res.json();
-            })
+            .then(res => res.json())
             .then(data => {
                 anime.isLoading = false;
-                seasonData.episodes = data.totalEpisodes;
+                if(data.exists !== false && !data.fallback) {
+                    seasonData.episodes = data.totalEpisodes;
+                } else {
+                    // Fallback-Abfrage über Jikan, falls die Staffel-Verifizierung hakt
+                    fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name + " Season " + seasonNumber)}&limit=1`)
+                        .then(r => r.json())
+                        .then(jData => {
+                            if(jData.data && jData.data.length > 0) {
+                                seasonData.episodes = jData.data[0].episodes || 12;
+                            }
+                            renderList();
+                        }).catch(() => renderList());
+                }
                 seasonData.isVerified = true;
                 saveAndRender();
             }).catch(() => {
                 anime.isLoading = false;
-                seasonData.isVerified = true; // Sperren, damit nicht endlos geladen wird
+                seasonData.isVerified = true;
                 renderList();
             });
     } else {
         saveAndRender();
     }
+}
+
+// --- AUTOMATION: Klick-Tracking-Funktion ---
+function watchEpisodeAuto(animeId, seasonNum, epNum) {
+    const anime = animeList.find(a => a.id === animeId);
+    if (!anime) return;
+
+    const epKey = `s${seasonNum}e${epNum}`;
+    
+    // Hakt die Folge automatisch im Datensatz ab
+    if (!anime.watchedEpisodes.includes(epKey)) {
+        anime.watchedEpisodes.push(epKey);
+    }
+    
+    // Direkt im Speicher sichern
+    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+    
+    // UX-Optimierung: Da das iPad flüssig in den neuen Streaming-Tab wechseln soll,
+    // verzögern wir das visuelle Update der Kacheln um 300ms im Hintergrund.
+    setTimeout(() => {
+        renderList();
+    }, 300);
 }
 
 function toggleEdit(id) {
@@ -179,28 +224,31 @@ function resyncAnime(id) {
     
     anime.isLoading = true;
     anime.isEditing = false;
+    anime.hasWarning = false;
     renderList(); 
     
     fetch(`${API_BASE}?slug=${anime.slug}`)
-        .then(res => {
-            if (!res.ok) throw new Error("404");
-            return res.json();
-        })
+        .then(res => res.json())
         .then(data => {
             anime.isLoading = false;
-            anime.seasons = [];
-            for (let i = 1; i <= data.totalSeasons; i++) {
-                anime.seasons.push({ 
-                    number: i, 
-                    episodes: i === 1 ? data.totalEpisodes : 12,
-                    isVerified: i === 1 ? true : false
-                });
+            if(data.exists === false) {
+                anime.hasWarning = true;
+            } else {
+                anime.seasons = [];
+                for (let i = 1; i <= (data.totalSeasons || 1); i++) {
+                    anime.seasons.push({ 
+                        number: i, 
+                        episodes: i === 1 ? (data.totalEpisodes || 12) : 12,
+                        isVerified: i === 1 ? !data.fallback : false
+                    });
+                }
+                if (data.fallback) anime.hasWarning = true;
+                anime.activeTab = 1;
             }
-            anime.activeTab = 1;
             saveAndRender();
         }).catch(() => {
-            alert("❌ Synchronisierung fehlgeschlagen. Link-Name existiert vermutlich nicht auf AniWorld.");
             anime.isLoading = false;
+            anime.hasWarning = true;
             saveAndRender();
         });
 }
@@ -219,6 +267,7 @@ function saveManualEps(id, seasonNum) {
         seasonData.isVerified = true; 
     }
     anime.isEditing = false;
+    anime.hasWarning = false;
     saveAndRender();
 }
 
@@ -248,14 +297,13 @@ function changeSort() {
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListFullstackV1', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
     renderList();
 }
 
 function renderList() {
     const grid = document.getElementById('animeGrid');
     
-    // FIX: Vor dem Leeren des Grids merken wir uns die exakte Scroll-Position JEDES Episoden-Containers!
     const scrollPositions = {};
     animeList.forEach(anime => {
         const container = document.getElementById(`epScroll_${anime.id}`);
@@ -305,6 +353,10 @@ function renderList() {
             tabsHtml += `<button class="tab-btn ${isActive}" onclick="switchTab(${anime.id}, ${s.number})">St. ${s.number}</button>`;
         });
 
+        const warningHtml = anime.hasWarning 
+            ? `<div style="color: #ffaa00; font-size: 11px; margin-top: 4px; font-weight: bold;">⚠️ Link unbestätigt (Backup aktiv)</div>` 
+            : '';
+
         let contentAreaHtml = '';
         
         if (anime.isEditing) {
@@ -335,7 +387,6 @@ function renderList() {
                 const isWatched = anime.watchedEpisodes.includes(`s${curSeason}e${i}`) ? 'watched' : '';
                 epGridHtml += `<button class="episode-badge ${isWatched}" onclick="toggleEpisode(${anime.id}, ${curSeason}, ${i})">${i}</button>`;
             }
-            // FIX: Wir weisen dem Container eine eindeutige ID zu (epScroll_${anime.id})
             contentAreaHtml = `
                 <div class="episode-box-title">Staffel ${curSeason} Episoden:</div>
                 <div class="episode-grid-container" id="epScroll_${anime.id}">
@@ -351,6 +402,7 @@ function renderList() {
                     <h3 class="anime-title">${anime.name}</h3>
                     <div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>
                     <div class="anime-meta" style="font-size: 11px; margin-top:4px;">Haken Gesamt: 🏆 ${anime.watchedEpisodes.length}</div>
+                    ${warningHtml}
                 </div>
             </div>
 
@@ -365,7 +417,7 @@ function renderList() {
             ${contentAreaHtml}
             
             <div class="card-actions">
-                <a href="${streamUrl}" target="_blank" class="stream-link">St. ${curSeason} Folge ${nächsteFolge} schauen</a>
+                <a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curSeason}, ${nächsteFolge})">St. ${curSeason} Folge ${nächsteFolge} schauen</a>
                 <div style="display:flex; justify-content:space-between; margin-top:12px;">
                     <a href="${searchUrl}" target="_blank" class="search-fallback">🔍 Auf AniWorld suchen</a>
                     <div style="display:flex; gap:10px;">
@@ -378,7 +430,6 @@ function renderList() {
         grid.appendChild(card);
     });
 
-    // FIX: Nachdem das Grid neu gezeichnet wurde, setzen wir den Scrollbalken blitzschnell auf den gemerkten Wert zurück!
     animeList.forEach(anime => {
         const container = document.getElementById(`epScroll_${anime.id}`);
         if (container && scrollPositions[anime.id]) {
