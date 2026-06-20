@@ -1,12 +1,13 @@
 :root {
     --bg-color: #0f0f15;
     --card-bg: #1c1c26;
-    --accent-color: #fa5252; /* Ein schickes Rot */
+    --accent-color: #fa5252; 
+    --success-color: #4caf50; /* Grün für "Gesehen" */
     --text-color: #e0e0e0;
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
     margin: 0;
@@ -18,10 +19,7 @@ body {
     margin: 0 auto;
 }
 
-h1 {
-    text-align: center;
-    color: var(--accent-color);
-}
+h1 { text-align: center; color: var(--accent-color); }
 
 .input-section {
     display: flex;
@@ -31,13 +29,49 @@ h1 {
     flex-wrap: wrap;
 }
 
+/* Neu: Wrapper für das Suchfeld und Dropdown */
+.input-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 300px;
+}
+
 input {
+    width: 100%;
+    box-sizing: border-box;
     padding: 12px;
     border: none;
     border-radius: 8px;
     background-color: var(--card-bg);
     color: var(--text-color);
     font-size: 16px;
+}
+
+/* Neu: Das Dropdown-Menü */
+.autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: #2b2b36;
+    border-radius: 8px;
+    margin-top: 5px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 10;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    display: none; /* Ist unsichtbar, bis man tippt */
+}
+
+.autocomplete-item {
+    padding: 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #1c1c26;
+}
+
+.autocomplete-item:hover {
+    background-color: var(--accent-color);
+    color: white;
 }
 
 button {
@@ -49,14 +83,8 @@ button {
     font-size: 16px;
     font-weight: bold;
     cursor: pointer;
-    transition: 0.2s;
 }
 
-button:hover {
-    opacity: 0.8;
-}
-
-/* Kachel-Design, perfekt für breite Bildschirme */
 .anime-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -67,18 +95,20 @@ button:hover {
     background-color: var(--card-bg);
     padding: 20px;
     border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     display: flex;
     flex-direction: column;
     gap: 15px;
     border-top: 4px solid var(--accent-color);
+    transition: 0.3s;
 }
 
-.anime-title {
-    font-size: 1.2em;
-    font-weight: bold;
-    margin: 0;
+/* Neu: Wenn der Anime abgeschlossen ist */
+.anime-card.watched {
+    border-top: 4px solid var(--success-color);
+    opacity: 0.7;
 }
+
+.anime-title { font-size: 1.2em; font-weight: bold; margin: 0; }
 
 .controls {
     display: flex;
@@ -86,13 +116,9 @@ button:hover {
     align-items: center;
 }
 
-.ep-btn {
-    background-color: #2b2b36;
-    padding: 8px 15px;
-}
+.ep-btn { background-color: #2b2b36; padding: 8px 15px; }
 
 .stream-link {
-    display: block;
     text-align: center;
     text-decoration: none;
     background-color: var(--accent-color);
@@ -100,4 +126,18 @@ button:hover {
     padding: 10px;
     border-radius: 6px;
     font-weight: bold;
+}
+
+/* Neu: Der "Gesehen" Button */
+.watched-btn {
+    background-color: transparent;
+    border: 1px solid var(--success-color);
+    color: var(--success-color);
+    padding: 8px;
+    width: 100%;
+}
+
+.watched-btn.active {
+    background-color: var(--success-color);
+    color: white;
 }
