@@ -2,7 +2,6 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 module.exports = async (req, res) => {
-    // Erlaubt Anfragen von überall
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET');
 
@@ -13,7 +12,6 @@ module.exports = async (req, res) => {
     }
 
     try {
-        // Wenn eine bestimmte Staffel abgefragt wird, lade diese, sonst die Hauptseite
         const url = season 
             ? `https://aniworld.to/anime/stream/${slug}/staffel-${season}`
             : `https://aniworld.to/anime/stream/${slug}`;
@@ -26,7 +24,6 @@ module.exports = async (req, res) => {
 
         const $ = cheerio.load(data);
         
-        // 1. Zähle die verfügbaren Staffeln auf der Seite
         const seasons = [];
         $('a[href*="/staffel-"]').each((i, el) => {
             const href = $(el).attr('href');
@@ -38,7 +35,6 @@ module.exports = async (req, res) => {
         });
         const totalSeasons = seasons.length > 0 ? Math.max(...seasons) : 1;
 
-        // 2. Zähle die Episoden für die aktuell geladene Staffel
         const episodes = [];
         $('a[href*="/episode-"]').each((i, el) => {
             const href = $(el).attr('href');
@@ -50,7 +46,6 @@ module.exports = async (req, res) => {
         });
         const totalEpisodes = episodes.length > 0 ? Math.max(...episodes) : 12;
 
-        // Schicke das fertige Ergebnis automatisch an das iPad zurück
         return res.status(200).json({
             slug,
             totalSeasons,
@@ -59,7 +54,11 @@ module.exports = async (req, res) => {
 
     } catch (error) {
         console.error("Scraping Fehler:", error.message);
-        // Falls AniWorld den Anime nicht exakt so schreibt, geben wir Standardwerte zurück
+        // NEU: Wenn AniWorld ein 404 wirft (Anime existiert nicht), leiten wir den Fehler sauber weiter!
+        if (error.response && error.response.status === 404) {
+            return res.status(404).json({ error: 'Dieser Anime existiert nicht auf AniWorld.' });
+        }
+        // Bei anderen Fehlern (z.B. Timeout) geben wir zur Sicherheit den Fallback
         return res.status(200).json({
             slug,
             totalSeasons: 1,
