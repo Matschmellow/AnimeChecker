@@ -185,6 +185,7 @@ function switchTab(animeId, seasonNumber) {
     }
 }
 
+// --- LOGIK GEÄNDERT: Schaltet jetzt bei Bedarf vollautomatisch die Staffel um ---
 function watchEpisodeAuto(animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -194,8 +195,28 @@ function watchEpisodeAuto(animeId, seasonNum, epNum) {
         anime.watchedEpisodes.push(epKey);
     }
     
-    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
-    setTimeout(() => { renderList(); }, 300);
+    // Checken, ob das die letzte Folge der aktuellen Staffel war
+    const seasonData = anime.seasons.find(s => s.number === seasonNum);
+    const maxBoxen = seasonData ? seasonData.episodes : 12;
+    const totalAvailableSeasons = anime.seasons ? anime.seasons.length : 1;
+
+    // Wenn die aktuelle Staffel voll ist UND es noch eine Folgestaffel gibt
+    if (epNum === maxBoxen && seasonNum < totalAvailableSeasons) {
+        // Schalte die aktive Ansicht direkt im Speicher auf die nächste Staffel um!
+        anime.activeTab = seasonNum + 1;
+        
+        // Lokale Sicherung vor dem asynchronen Fetch-Tabwechsel-Aufruf
+        localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+        
+        // Wir triggern den Tabwechsel-Prozess, um ggf. die Folgenanzahl der neuen Staffel abzufragen
+        setTimeout(() => {
+            switchTab(animeId, seasonNum + 1);
+        }, 300);
+    } else {
+        // Normaler Fall: Einfach im Hintergrund abspeichern und neu rendern
+        localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+        setTimeout(() => { renderList(); }, 300);
+    }
 }
 
 function toggleEdit(id) {
@@ -282,6 +303,7 @@ function removeAnime(id) {
     saveAndRender();
 }
 
+// Prüft, ob NUR die aktuell gewählte Staffel beendet ist
 function isCurrentSeasonFinished(anime) {
     if (anime.isLoading || !anime.seasons) return false;
     const curSeason = anime.activeTab || 1;
@@ -290,6 +312,21 @@ function isCurrentSeasonFinished(anime) {
     
     const geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
     return geschauteInStaffel >= maxBoxen && maxBoxen > 0;
+}
+
+// NEU: Prüft, ob der Anime wirklich bis zur ALLERLETZTEN Ffole der ALLERLETZTEN Staffel beendet wurde
+function isAnimeCompletelyFinished(anime) {
+    if (anime.isLoading || !anime.seasons) return false;
+    const totalSeasons = anime.seasons.length;
+    
+    // Checke die letzte Staffel
+    const lastSeasonData = anime.seasons.find(s => s.number === totalSeasons);
+    if (!lastSeasonData) return false;
+    
+    const maxBoxenLastSeason = lastSeasonData.episodes;
+    const geschauteInLastSeason = anime.watchedEpisodes.filter(key => key.startsWith(`s${totalSeasons}e`)).length;
+    
+    return geschauteInLastSeason >= maxBoxenLastSeason && maxBoxenLastSeason > 0;
 }
 
 function changeSort() {
@@ -324,9 +361,10 @@ function renderList() {
         sortedList.sort((a, b) => b.id - a.id);
     }
 
+    // LOGIK GEÄNDERT: Nur noch komplett BEENDETE Serien fliegen ans Ende der Liste!
     sortedList.sort((a, b) => {
-        const aDone = isCurrentSeasonFinished(a) ? 1 : 0;
-        const bDone = isCurrentSeasonFinished(b) ? 1 : 0;
+        const aDone = isAnimeCompletelyFinished(a) ? 1 : 0;
+        const bDone = isAnimeCompletelyFinished(b) ? 1 : 0;
         return aDone - bDone; 
     });
 
@@ -340,7 +378,9 @@ function renderList() {
             nächsteFolge++;
         }
         
-        const isFinished = isCurrentSeasonFinished(anime);
+        const isSeasonFinished = isCurrentSeasonFinished(anime);
+        const isAllFinished = isAnimeCompletelyFinished(anime);
+        
         if (nächsteFolge > maxBoxen) nächsteFolge = maxBoxen;
 
         let geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
@@ -352,7 +392,8 @@ function renderList() {
         const card = document.createElement('div');
         card.className = 'anime-card';
         
-        if (isFinished) {
+        // Karte ausbleichen passiert erst, wenn das GESAMTWERK fertig ist
+        if (isAllFinished) {
             card.style.opacity = "0.45";
             card.style.filter = "saturate(0.7)";
             card.style.borderColor = "var(--success)";
@@ -372,9 +413,13 @@ function renderList() {
             ? `<div style="color: #ffaa00; font-size: 11px; margin-top: 4px; font-weight: bold;">⚠️ Link unbestätigt (Backup aktiv)</div>` 
             : '';
 
-        const statusMetaHtml = isFinished 
-            ? `<div style="color: var(--success); font-weight: 800; font-size: 12px; margin-top: 4px;">🎉 STAFFEL BEENDET!</div>`
-            : `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>`;
+        // Status-Text passt sich an den Gesamtstatus an
+        let statusMetaHtml = `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>`;
+        if (isAllFinished) {
+            statusMetaHtml = `<div style="color: #d4af37; font-weight: 800; font-size: 12px; margin-top: 4px;">🏆 SERIE KOMPLETT BEENDET!</div>`;
+        } else if (isSeasonFinished) {
+            statusMetaHtml = `<div style="color: var(--success); font-weight: 800; font-size: 12px; margin-top: 4px;">🎉 STAFFEL ${curSeason} BEENDET!</div>`;
+        }
 
         let contentAreaHtml = '';
         
@@ -414,21 +459,16 @@ function renderList() {
             `;
         }
 
-        // --- NEU: Dynamische und fehlerfreie Button-Logik ---
         let actionButtonHtml = '';
-        if (isFinished) {
-            // Wir prüfen, ob auf AniWorld überhaupt noch eine Folgestaffel existiert
+        if (isAllFinished) {
+            actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #111, #222); color: #747d8c; border:1px solid var(--border-color); cursor: default; box-shadow: none; font-weight:800;">🏆 KOMPLETT GESCHAUET</div>`;
+        } else if (isSeasonFinished) {
             const totalAvailableSeasons = anime.seasons ? anime.seasons.length : 1;
-            
             if (curSeason < totalAvailableSeasons) {
-                // Es gibt eine Folgestaffel -> Button erlaubt das Weiterklicken
-                actionButtonHtml = `<button class="stream-link" style="width:100%; border:none; background-color: var(--success); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.2);" onclick="switchTab(${anime.id}, ${curSeason + 1})">Nächste Staffel checken 🎉</button>`;
-            } else {
-                // Es gibt KEINE weitere Staffel mehr -> Der Button wird deaktiviert und feiert das Ende der Serie!
-                actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #gold, #d4af37); background-color: #d4af37; color: #000; cursor: default; box-shadow: none; font-weight:800; text-shadow: 0 1px 2px rgba(255,255,255,0.4);">🏆 SERIE KOMPLETT BEENDET!</div>`;
+                // Falls du manuell auf eine fertige Zwischenstaffel klickst
+                actionButtonHtml = `<button class="stream-link" style="width:100%; border:none; background-color: var(--success); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.2);" onclick="switchTab(${anime.id}, ${curSeason + 1})">Nächste Staffel laden 🎉</button>`;
             }
         } else {
-            // Normaler Fall: Serie läuft noch
             actionButtonHtml = `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curSeason}, ${nächsteFolge})">St. ${curSeason} Folge ${nächsteFolge} schauen</a>`;
         }
 
