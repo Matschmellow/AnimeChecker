@@ -1,49 +1,60 @@
 let animeList = JSON.parse(localStorage.getItem('myAnimeList')) || [];
+let selectedSlug = "";
 
-// Deine kleine Mini-Datenbank. Hier kannst du beliebig viele Animes hinzufügen!
-// 'name' ist das, was schön aussieht. 'slug' ist das, was in der AniWorld URL steht.
-const animeDatabase = [
-    { name: "Jujutsu Kaisen", slug: "jujutsu-kaisen" },
-    { name: "Attack on Titan", slug: "attack-on-titan" },
-    { name: "Demon Slayer", slug: "demon-slayer-kimetsu-no-yaiba" },
-    { name: "One Piece", slug: "one-piece" },
-    { name: "Naruto Shippuden", slug: "naruto-shippuden" },
-    { name: "Solo Leveling", slug: "solo-leveling" },
-    { name: "My Hero Academia", slug: "my-hero-academia" },
-    { name: "Frieren", slug: "frieren-beyond-journeys-end" }
-];
+// "Debounce" Timer: Verhindert, dass bei jedem Tastendruck die API bombardiert wird
+let typingTimer;
+const doneTypingInterval = 400; // Wartet 400ms nach dem letzten Tastendruck
 
-let selectedSlug = ""; // Speichert temporär den korrekten Link
-
-// --- Autocomplete Funktion ---
+// --- Live API Suche ---
 function showSuggestions() {
-    const input = document.getElementById('animeName').value.toLowerCase();
+    clearTimeout(typingTimer);
+    const input = document.getElementById('animeName').value.trim();
     const list = document.getElementById('autocompleteList');
-    list.innerHTML = ''; // Liste leeren
-
-    if (input.length === 0) {
+    
+    // Suche startet erst ab 3 eingegebenen Buchstaben
+    if (input.length < 3) {
+        list.innerHTML = '';
         list.style.display = 'none';
         return;
     }
 
-    // Sucht in der Datenbank nach Treffern
-    const matches = animeDatabase.filter(anime => anime.name.toLowerCase().includes(input));
-
-    if (matches.length > 0) {
-        list.style.display = 'block';
-        matches.forEach(match => {
-            const item = document.createElement('div');
-            item.className = 'autocomplete-item';
-            item.innerText = match.name;
-            item.onclick = () => selectAnime(match.name, match.slug);
-            list.appendChild(item);
-        });
-    } else {
-        list.style.display = 'none';
-    }
+    // Startet den Timer
+    typingTimer = setTimeout(() => {
+        // Wir fragen die weltweite Jikan-Datenbank ab (auf 5 Ergebnisse limitiert)
+        fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
+            .then(response => response.json())
+            .then(data => {
+                list.innerHTML = '';
+                
+                if (data.data && data.data.length > 0) {
+                    list.style.display = 'block';
+                    
+                    data.data.forEach(anime => {
+                        const title = anime.title; // Der schöne, offizielle Name
+                        
+                        // Hier bauen wir den Namen so um, wie AniWorld ihn für Links braucht:
+                        // Alles klein, Sonderzeichen weg, Leerzeichen zu Bindestrichen
+                        const slug = title.toLowerCase()
+                            .replace(/[^a-z0-9\s-]/g, '') // Entfernt Symbole wie Doppelpunkte
+                            .replace(/\s+/g, '-')         // Ersetzt Leerzeichen durch Bindestriche
+                            .replace(/-+/g, '-');         // Verhindert doppelte Bindestriche
+                        
+                        const item = document.createElement('div');
+                        item.className = 'autocomplete-item';
+                        item.innerText = title;
+                        // Beim Klick merken wir uns den schönen Namen UND den Link-Namen
+                        item.onclick = () => selectAnime(title, slug);
+                        list.appendChild(item);
+                    });
+                } else {
+                    list.style.style.display = 'none';
+                }
+            })
+            .catch(err => console.error("Fehler beim Laden der Anime-Daten:", err));
+    }, doneTypingInterval);
 }
 
-// Wird ausgeführt, wenn du einen Vorschlag anklickst
+// Wird ausgeführt, wenn ein Vorschlag angeklickt wird
 function selectAnime(name, slug) {
     document.getElementById('animeName').value = name;
     selectedSlug = slug;
@@ -62,18 +73,18 @@ function addAnime() {
     
     if (nameInput.value.trim() === '') return;
 
-    // Falls man manuell tippt und nichts aus der Liste wählt, nutzen wir das alte Fallback-System
+    // Fallback: Falls man den Namen komplett selbst eintippt ohne Dropdown
     let finalSlug = selectedSlug;
     if (finalSlug === "") {
-        finalSlug = nameInput.value.toLowerCase().replace(/ /g, "-");
+        finalSlug = nameInput.value.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-');
     }
 
     const newAnime = {
         id: Date.now(),
         name: nameInput.value.trim(),
-        slug: finalSlug, // Wir speichern jetzt explizit den URL-Teil!
+        slug: finalSlug,
         episode: parseInt(epInput.value),
-        watched: false // Neu: Ist er schon fertig geschaut?
+        watched: false
     };
 
     animeList.push(newAnime);
@@ -93,11 +104,10 @@ function addEpisode(id) {
     }
 }
 
-// Neu: Toggle für "Gesehen"
 function toggleWatched(id) {
     const anime = animeList.find(a => a.id === id);
     if (anime) {
-        anime.watched = !anime.watched; // Dreht den Status um (true/false)
+        anime.watched = !anime.watched;
         saveAndRender();
     }
 }
@@ -112,10 +122,12 @@ function renderList() {
     grid.innerHTML = '';
 
     animeList.forEach(anime => {
-        // Nutzt jetzt den gespeicherten "slug" für den perfekten Link
+        // 1. Der direkte Link zur Folge
         const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/staffel-1/episode-${anime.episode}`;
         
-        // CSS-Klassen abhängig vom "Watched" Status
+        // 2. Der Fallback-Link: Falls der direkte Link fehlschlägt, durchsucht dieser Button AniWorld nach dem Namen
+        const searchUrl = `https://aniworld.to/support/suche?q=${encodeURIComponent(anime.name)}`;
+        
         const cardClass = anime.watched ? 'anime-card watched' : 'anime-card';
         const btnClass = anime.watched ? 'watched-btn active' : 'watched-btn';
         const btnText = anime.watched ? '✓ Abgeschlossen' : 'Als abgeschlossen markieren';
@@ -132,8 +144,10 @@ function renderList() {
             
             ${!anime.watched ? `<a href="${streamUrl}" target="_blank" class="stream-link">Folge ${anime.episode} schauen</a>` : ''}
             
-            <button class="${btnClass}" onclick="toggleWatched(${anime.id})">${btnText}</button>
-            <button onclick="removeAnime(${anime.id})" style="background-color: transparent; border: none; color: #888; font-size: 12px; margin-top: 5px;">Löschen</button>
+            ${!anime.watched ? `<a href="${searchUrl}" target="_blank" style="text-align:center; text-decoration:none; color:#fa5252; font-size:12px; margin-top:5px;">Link kaputt? Auf AniWorld suchen</a>` : ''}
+            
+            <button class="${btnClass}" onclick="toggleWatched(${anime.id})" style="margin-top:10px;">${btnText}</button>
+            <button onclick="removeAnime(${anime.id})" style="background-color: transparent; border: none; color: #888; font-size: 12px; margin-top: 5px; cursor:pointer;">Löschen</button>
         `;
         grid.appendChild(card);
     });
