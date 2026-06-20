@@ -8,62 +8,71 @@ module.exports = async (req, res) => {
     const { slug, season } = req.query;
 
     if (!slug) {
-        return res.status(400).json({ error: 'Kein Anime-Slug übergeben.' });
+        return res.status(200).json({ exists: false, error: 'Kein Slug' });
     }
 
     try {
+        const curSeason = season ? parseInt(season) : 1;
         const url = season 
-            ? `https://aniworld.to/anime/stream/${slug}/staffel-${season}`
+            ? `https://aniworld.to/anime/stream/${slug}/staffel-${curSeason}`
             : `https://aniworld.to/anime/stream/${slug}`;
 
         const { data } = await axios.get(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'text/html'
+            },
+            timeout: 6000
         });
 
         const $ = cheerio.load(data);
         
+        // NEU & PRÄZISE: Zähle Staffeln NUR, wenn sie exakt zu diesem Anime gehören
         const seasons = [];
-        $('a[href*="/staffel-"]').each((i, el) => {
-            const href = $(el).attr('href');
-            const match = href.match(/staffel-(\d+)/);
-            if (match) {
-                const sNum = parseInt(match[1]);
-                if (!seasons.includes(sNum)) seasons.push(sNum);
+        $('a').each((i, el) => {
+            const href = $(el).attr('href') || '';
+            if (href.includes(`/stream/${slug}/staffel-`)) {
+                const match = href.match(/staffel-(\d+)/);
+                if (match) {
+                    const sNum = parseInt(match[1]);
+                    if (!seasons.includes(sNum)) seasons.push(sNum);
+                }
             }
         });
         const totalSeasons = seasons.length > 0 ? Math.max(...seasons) : 1;
 
+        // NEU & PRÄZISE: Zähle Episoden NUR aus der aktuellen Staffel dieses spezifischen Animes
         const episodes = [];
-        $('a[href*="/episode-"]').each((i, el) => {
-            const href = $(el).attr('href');
-            const match = href.match(/episode-(\d+)/);
-            if (match) {
-                const eNum = parseInt(match[1]);
-                if (!episodes.includes(eNum)) episodes.push(eNum);
+        $('a').each((i, el) => {
+            const href = $(el).attr('href') || '';
+            if (href.includes(`/stream/${slug}/staffel-${curSeason}/episode-`)) {
+                const match = href.match(/episode-(\d+)/);
+                if (match) {
+                    const eNum = parseInt(match[1]);
+                    if (!episodes.includes(eNum)) episodes.push(eNum);
+                }
             }
         });
         const totalEpisodes = episodes.length > 0 ? Math.max(...episodes) : 12;
 
         return res.status(200).json({
+            exists: true,
             slug,
             totalSeasons,
             totalEpisodes
         });
 
     } catch (error) {
-        console.error("Scraping Fehler:", error.message);
-        // NEU: Wenn AniWorld ein 404 wirft (Anime existiert nicht), leiten wir den Fehler sauber weiter!
         if (error.response && error.response.status === 404) {
-            return res.status(404).json({ error: 'Dieser Anime existiert nicht auf AniWorld.' });
+            return res.status(200).json({ exists: false, slug });
         }
-        // Bei anderen Fehlern (z.B. Timeout) geben wir zur Sicherheit den Fallback
         return res.status(200).json({
+            exists: true,
             slug,
             totalSeasons: 1,
             totalEpisodes: 12,
-            fallback: true
+            fallback: true,
+            blocked: true
         });
     }
 };
