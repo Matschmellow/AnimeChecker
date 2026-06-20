@@ -1,9 +1,10 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListUltimateV2')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListUltimateV3')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
 const doneTypingInterval = 500;
 
+// --- Live API Suche für das Eingabefeld ---
 function showSuggestions() {
     clearTimeout(typingTimer);
     const input = document.getElementById('animeName').value.trim();
@@ -31,7 +32,7 @@ function showSuggestions() {
                         const title = anime.title;
                         const slug = generateSlug(title);
                         const imageUrl = (anime.images && anime.images.jpg) ? anime.images.jpg.large_image_url : null;
-                        const totalEps = anime.episodes || 12; // Falls null (laufend), standardmäßig erstmal 12 setzen
+                        const totalEps = anime.episodes || 12;
 
                         const item = document.createElement('div');
                         item.className = 'autocomplete-item';
@@ -69,7 +70,6 @@ function addAnime() {
 
     let newAnime;
     if (currentSelectedAnime && nameInput.value.trim() === currentSelectedAnime.name) {
-        // NEU: Wir legen eine Konfigurationskarte für die Staffeln an
         const initialEps = currentSelectedAnime.totalEps || 12;
         newAnime = {
             id: Date.now(),
@@ -77,7 +77,7 @@ function addAnime() {
             slug: currentSelectedAnime.slug,
             image: currentSelectedAnime.image,
             season: 1,
-            seasonConfigs: { 1: initialEps }, // Speichert { staffelNummer: maxFolgen }
+            seasonConfigs: { 1: initialEps }, 
             watchedEpisodes: []
         };
     } else {
@@ -120,11 +120,12 @@ function addAnimeFromData(name, slug, image, totalEps) {
     saveAndRender();
 }
 
+// FIX: Tippfehler bei der Schlüsselerstellung behoben
 function toggleEpisode(animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
 
-    const epKey = `s${seasonNum}e${epKeyNum = epNum}`;
+    const epKey = `s${seasonNum}e${epNum}`;
     const index = anime.watchedEpisodes.indexOf(epKey);
     
     if (index === -1) {
@@ -135,6 +136,7 @@ function toggleEpisode(animeId, seasonNum, epNum) {
     saveAndRender();
 }
 
+// NEU: Diese Funktion sucht jetzt beim Klicken auf "+" automatisch nach der neuen Staffel in der API
 function changeSeason(animeId, delta) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -144,15 +146,36 @@ function changeSeason(animeId, delta) {
     
     anime.season = newSeason;
     
-    // Falls für die neue Staffel noch keine Folgenanzahl existiert, mit 12 initialisieren
+    if (!anime.seasonConfigs) { anime.seasonConfigs = { 1: 12 }; }
+    
+    // Wenn für die neue Staffel noch keine Konfiguration existiert, fragen wir die API
     if (!anime.seasonConfigs[newSeason]) {
+        // Temporärer Platzhalter, bis die API antwortet
         anime.seasonConfigs[newSeason] = 12;
+        
+        // Automatischer API-Hintergrund-Check für die neue Staffel (z.B. "Jujutsu Kaisen Season 2")
+        fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name + " Season " + newSeason)}&limit=1`)
+            .then(res => {
+                if (!res.ok) throw new Error("API Limit");
+                return res.json();
+            })
+            .then(data => {
+                if (data.data && data.data.length > 0) {
+                    // Wenn die API die Staffel findet, nimm deren echte Folgenanzahl
+                    const apiEps = data.data[0].episodes || 12;
+                    anime.seasonConfigs[newSeason] = apiEps;
+                    saveAndRender();
+                }
+            })
+            .catch(err => {
+                console.error("Hintergrund-API-Fehler beim Laden der Staffel:", err);
+                // Bleibt im Fehlerfall fließend auf den standardmäßigen 12 Folgen stehen
+            });
     }
     
     saveAndRender();
 }
 
-// NEU: Erlaubt es, die Folgenanzahl der aktuellen Staffel live im Kasten anzupassen
 function updateSeasonEps(animeId, seasonNum, value) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -161,8 +184,7 @@ function updateSeasonEps(animeId, seasonNum, value) {
     if (isNaN(eps) || eps < 1) eps = 1;
     
     anime.seasonConfigs[seasonNum] = eps;
-    localStorage.setItem('myAnimeListUltimateV2', JSON.stringify(animeList));
-    // Wir rendern nur die Liste neu, ohne den Fokus vom Input zu klauen
+    localStorage.setItem('myAnimeListUltimateV3', JSON.stringify(animeList));
     renderList(); 
 }
 
@@ -177,7 +199,7 @@ function changeSort() {
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListUltimateV2', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListUltimateV3', JSON.stringify(animeList));
     renderList();
 }
 
@@ -198,17 +220,14 @@ function renderList() {
     sortedList.forEach(anime => {
         const curSeason = anime.season || 1;
         
-        // NEU: Holt die exakte Folgenanzahl aus der Konfiguration dieser spezifischen Staffel
-        if (!anime.seasonConfigs) { anime.seasonConfigs = { 1: 12 }; } // Abwärtskompatibilität
+        if (!anime.seasonConfigs) { anime.seasonConfigs = { 1: 12 }; }
         const maxBoxen = anime.seasonConfigs[curSeason] || 12;
 
-        // Nächste ungesehene Folge berechnen
         let nächsteFolge = 1;
         while (anime.watchedEpisodes.includes(`s${curSeason}e${nächsteFolge}`)) {
             nächsteFolge++;
         }
 
-        // Ladebalken berechnen
         let geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
         let prozent = Math.min(100, Math.round((geschauteInStaffel / maxBoxen) * 100));
 
@@ -318,3 +337,4 @@ document.addEventListener('click', function(e) {
 
 renderList();
 loadRecommendations();
+
