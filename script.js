@@ -93,6 +93,7 @@ function addAnime() {
     currentSelectedAnime = null;
     saveAndRender();
 
+    // Ruft den vollautomatischen Deep-Scan des Servers ab
     fetch(`${API_BASE}?slug=${newAnime.slug}`)
         .then(res => res.json())
         .then(data => {
@@ -102,6 +103,7 @@ function addAnime() {
             anime.isLoading = false;
 
             if (data.exists === false) {
+                // Unfehlbares Jikan-Backup, falls AniWorld komplett streikt
                 fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name)}&limit=1`)
                     .then(r => r.json())
                     .then(jData => {
@@ -115,15 +117,8 @@ function addAnime() {
                         saveAndRender();
                     });
             } else {
-                anime.seasons = [];
-                const maxS = data.totalSeasons || 1;
-                for (let i = 1; i <= maxS; i++) {
-                    anime.seasons.push({ 
-                        number: i, 
-                        episodes: i === 1 ? (data.totalEpisodes || 12) : 12,
-                        isVerified: i === 1 ? !data.fallback : false
-                    });
-                }
+                // Das Backend liefert uns direkt das fertige, korrekte Staffel-Array!
+                anime.seasons = data.seasons;
                 if (data.fallback) anime.hasWarning = true;
                 saveAndRender();
             }
@@ -142,48 +137,12 @@ function addAnimeFromData(name, slug, image) {
     addAnime();
 }
 
-// Stellt sicher, dass beim manuellen Tab-Wechsel alles sauber verifiziert wird
+// Bereinigt: Kein asynchrones API-Laden mehr beim Tab-Wechsel nötig! Alles ist schon da!
 function switchTab(animeId, seasonNumber) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
-
     anime.activeTab = seasonNumber;
-    const seasonData = anime.seasons.find(s => s.number === seasonNumber);
-
-    if (seasonData && !seasonData.isVerified) {
-        anime.isLoading = true;
-        renderList();
-
-        fetch(`${API_BASE}?slug=${anime.slug}&season=${seasonNumber}`)
-            .then(res => res.json())
-            .then(data => {
-                anime.isLoading = false;
-                if(data.exists !== false && !data.fallback) {
-                    seasonData.episodes = data.totalEpisodes;
-                    seasonData.isVerified = true;
-                    saveAndRender();
-                } else {
-                    fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name + " Season " + seasonNumber)}&limit=1`)
-                        .then(r => r.json())
-                        .then(jData => {
-                            if(jData.data && jData.data.length > 0) {
-                                seasonData.episodes = jData.data[0].episodes || 12;
-                            }
-                            seasonData.isVerified = true;
-                            saveAndRender(); 
-                        }).catch(() => {
-                            seasonData.isVerified = true;
-                            saveAndRender();
-                        });
-                }
-            }).catch(() => {
-                anime.isLoading = false;
-                seasonData.isVerified = true;
-                renderList();
-            });
-    } else {
-        saveAndRender();
-    }
+    saveAndRender();
 }
 
 function watchEpisodeAuto(animeId, seasonNum, epNum) {
@@ -203,9 +162,8 @@ function watchEpisodeAuto(animeId, seasonNum, epNum) {
         anime.activeTab = seasonNum + 1;
         localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
         
-        setTimeout(() => {
-            switchTab(animeId, seasonNum + 1);
-        }, 300);
+        // Da die Folgestaffel bereits beim Hinzufügen gescannt wurde, rendern wir einfach direkt!
+        setTimeout(() => { renderList(); }, 300);
     } else {
         localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
         setTimeout(() => { renderList(); }, 300);
@@ -239,14 +197,7 @@ function resyncAnime(id) {
             if(data.exists === false) {
                 anime.hasWarning = true;
             } else {
-                anime.seasons = [];
-                for (let i = 1; i <= (data.totalSeasons || 1); i++) {
-                    anime.seasons.push({ 
-                        number: i, 
-                        episodes: i === 1 ? (data.totalEpisodes || 12) : 12,
-                        isVerified: i === 1 ? !data.fallback : false
-                    });
-                }
+                anime.seasons = data.seasons;
                 if (data.fallback) anime.hasWarning = true;
                 anime.activeTab = 1;
             }
@@ -291,36 +242,10 @@ function toggleEpisode(animeId, seasonNum, epNum) {
     saveAndRender();
 }
 
+// Der Rest bleibt identisch
 function removeAnime(id) {
     animeList = animeList.filter(a => a.id !== id);
     saveAndRender();
-}
-
-// Prüft präzise, ob die aktuell geöffnete Staffel beendet ist
-function isCurrentSeasonFinished(anime) {
-    if (anime.isLoading || !anime.seasons) return false;
-    const curSeason = anime.activeTab || 1;
-    const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
-    const maxBoxen = seasonData.episodes;
-    
-    const geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
-    return geschauteInStaffel >= maxBoxen && maxBoxen > 0;
-}
-
-// FIX: Überprüft jetzt mathematisch exakt, ob ALLE Folgen ALLER Staffeln geschaut wurden!
-function isAnimeCompletelyFinished(anime) {
-    if (anime.isLoading || !anime.seasons || anime.seasons.length === 0) return false;
-    
-    // Berechne die absolute Gesamtsumme aller Episoden über alle Staffeln hinweg
-    let gesamtEpisodenAnzahl = 0;
-    anime.seasons.forEach(s => {
-        gesamtEpisodenAnzahl += s.episodes;
-    });
-
-    // Wenn du absolut keine Haken hast oder die Anzahl nicht übereinstimmt -> false
-    if (anime.watchedEpisodes.length === 0 || gesamtEpisodenAnzahl === 0) return false;
-
-    return anime.watchedEpisodes.length >= gesamtEpisodenAnzahl;
 }
 
 function changeSort() {
@@ -355,7 +280,6 @@ function renderList() {
         sortedList.sort((a, b) => b.id - a.id);
     }
 
-    // Sortierung greift erst, wenn die Gesamtanzahl der Haken mathematisch stimmt
     sortedList.sort((a, b) => {
         const aDone = isAnimeCompletelyFinished(a) ? 1 : 0;
         const bDone = isAnimeCompletelyFinished(b) ? 1 : 0;
@@ -372,13 +296,14 @@ function renderList() {
             nächsteFolge++;
         }
         
-        const isSeasonFinished = isCurrentSeasonFinished(anime);
+        const isSeasonFinished = geschauteInStaffel => geschauteInStaffel >= maxBoxen;
         const isAllFinished = isAnimeCompletelyFinished(anime);
         
         if (nächsteFolge > maxBoxen) nächsteFolge = maxBoxen;
 
         let geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
         let prozent = Math.min(100, Math.round((geschauteInStaffel / maxBoxen) * 100));
+        const curSeasonFinished = isSeasonFinished(geschauteInStaffel);
 
         const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/staffel-${curSeason}/episode-${nächsteFolge}`;
         const searchUrl = `https://aniworld.to/support/suche?q=${encodeURIComponent(anime.name)}`;
@@ -409,7 +334,7 @@ function renderList() {
         let statusMetaHtml = `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>`;
         if (isAllFinished) {
             statusMetaHtml = `<div style="color: #d4af37; font-weight: 800; font-size: 12px; margin-top: 4px;">🏆 SERIE KOMPLETT BEENDET!</div>`;
-        } else if (isSeasonFinished) {
+        } else if (curSeasonFinished) {
             statusMetaHtml = `<div style="color: var(--success); font-weight: 800; font-size: 12px; margin-top: 4px;">🎉 STAFFEL ${curSeason} BEENDET!</div>`;
         }
 
@@ -453,8 +378,8 @@ function renderList() {
 
         let actionButtonHtml = '';
         if (isAllFinished) {
-            actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #111, #222); color: #747d8c; border:1px solid var(--border-color); cursor: default; box-shadow: none; font-weight:800;">🏆 KOMPLETT GESCHAUT</div>`;
-        } else if (isSeasonFinished) {
+            actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #111, #222); color: #747d8c; border:1px solid var(--border-color); cursor: default; box-shadow: none; font-weight:800;">🏆 KOMPLETT GESCHAUET</div>`;
+        } else if (curSeasonFinished) {
             const totalAvailableSeasons = anime.seasons ? anime.seasons.length : 1;
             if (curSeason < totalAvailableSeasons) {
                 actionButtonHtml = `<button class="stream-link" style="width:100%; border:none; background-color: var(--success); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.2);" onclick="switchTab(${anime.id}, ${curSeason + 1})">Nächste Staffel laden 🎉</button>`;
@@ -506,6 +431,14 @@ function renderList() {
     });
 }
 
+function isAnimeCompletelyFinished(anime) {
+    if (anime.isLoading || !anime.seasons || anime.seasons.length === 0) return false;
+    let gesamtEpisodenAnzahl = 0;
+    anime.seasons.forEach(s => { gesamtEpisodenAnzahl += s.episodes; });
+    if (anime.watchedEpisodes.length === 0 || gesamtEpisodenAnzahl === 0) return false;
+    return anime.watchedEpisodes.length >= gesamtEpisodenAnzahl;
+}
+
 function loadRecommendations() {
     const recGrid = document.getElementById('recommendationsGrid');
     fetch('https://api.jikan.moe/v4/top/anime?limit=4')
@@ -550,3 +483,4 @@ document.addEventListener('click', function(e) {
 
 renderList();
 loadRecommendations();
+
