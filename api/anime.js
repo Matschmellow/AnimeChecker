@@ -1,10 +1,10 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-// Hilfsfunktion, um eine einzelne Staffel abzufragen
-async function fetchSeasonEpisodes(slug, seasonNum) {
+async function fetchSeasonEpisodes(slug, seasonNum, isFilm = false) {
     try {
-        const url = `https://aniworld.to/anime/stream/${slug}/staffel-${seasonNum}`;
+        const typePath = isFilm ? 'film' : `staffel-${seasonNum}`;
+        const url = `https://aniworld.to/anime/stream/${slug}/${typePath}`;
         const { data } = await axios.get(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -17,7 +17,7 @@ async function fetchSeasonEpisodes(slug, seasonNum) {
         
         $('a').each((i, el) => {
             const href = $(el).attr('href') || '';
-            if (href.includes(`/stream/${slug}/staffel-${seasonNum}/episode-`)) {
+            if (href.includes(`/stream/${slug}/${typePath}/episode-`)) {
                 const match = href.match(/episode-(\d+)/);
                 if (match) {
                     const eNum = parseInt(match[1]);
@@ -25,9 +25,9 @@ async function fetchSeasonEpisodes(slug, seasonNum) {
                 }
             }
         });
-        return episodes.length > 0 ? Math.max(...episodes) : 12;
+        return episodes.length > 0 ? Math.max(...episodes) : 1;
     } catch (e) {
-        return 12; // Fallback, falls eine einzelne Staffel hakt
+        return 1;
     }
 }
 
@@ -36,10 +36,7 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET');
 
     const { slug } = req.query;
-
-    if (!slug) {
-        return res.status(200).json({ exists: false, error: 'Kein Slug' });
-    }
+    if (!slug) return res.status(200).json({ exists: false, error: 'Kein Slug' });
 
     try {
         const url = `https://aniworld.to/anime/stream/${slug}`;
@@ -52,8 +49,18 @@ module.exports = async (req, res) => {
         });
 
         const $ = cheerio.load(data);
-        
-        // 1. Alle verfügbaren Staffeln ermitteln
+        const dynamicSeasonsConfig = [];
+        let hasFilms = false;
+
+        // 1. Prüfen, ob es einen Filme-Tab gibt
+        $('a').each((i, el) => {
+            const href = $(el).attr('href') || '';
+            if (href.includes(`/stream/${slug}/film`)) {
+                hasFilms = true;
+            }
+        });
+
+        // 2. Reguläre Staffeln suchen
         const seasons = [];
         $('a').each((i, el) => {
             const href = $(el).attr('href') || '';
@@ -67,14 +74,26 @@ module.exports = async (req, res) => {
         });
         const totalSeasons = seasons.length > 0 ? Math.max(...seasons) : 1;
 
-        // 2. AUTOMATISCHER DEEP-SCAN: Für jede gefundene Staffel die echten Folgen ermitteln
-        const dynamicSeasonsConfig = [];
+        // 3. Deep-Scan für reguläre Staffeln
         for (let i = 1; i <= totalSeasons; i++) {
-            const epsCount = await fetchSeasonEpisodes(slug, i);
+            const epsCount = await fetchSeasonEpisodes(slug, i, false);
             dynamicSeasonsConfig.push({
                 number: i,
                 episodes: epsCount,
-                isVerified: true
+                isVerified: true,
+                isFilm: false
+            });
+        }
+
+        // 4. Wenn Filme existieren, als "spezielle" Staffel hinten anhängen
+        if (hasFilms) {
+            const filmCount = await fetchSeasonEpisodes(slug, 0, true);
+            dynamicSeasonsConfig.push({
+                number: totalSeasons + 1,
+                episodes: filmCount,
+                isVerified: true,
+                isFilm: true,
+                displayName: "Filme"
             });
         }
 
@@ -91,7 +110,7 @@ module.exports = async (req, res) => {
         return res.status(200).json({
             exists: true,
             slug,
-            seasons: [{ number: 1, episodes: 12, isVerified: false }],
+            seasons: [{ number: 1, episodes: 12, isVerified: false, isFilm: false }],
             fallback: true
         });
     }
