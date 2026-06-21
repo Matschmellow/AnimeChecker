@@ -84,7 +84,7 @@ function addAnime() {
         isLoading: true,
         isEditing: false,
         hasWarning: false,
-        seasons: [{ number: 1, episodes: 12 }],
+        seasons: [{ number: 1, episodes: 12, isFilm: false }],
         watchedEpisodes: []
     };
 
@@ -93,7 +93,6 @@ function addAnime() {
     currentSelectedAnime = null;
     saveAndRender();
 
-    // Ruft den vollautomatischen Deep-Scan des Servers ab
     fetch(`${API_BASE}?slug=${newAnime.slug}`)
         .then(res => res.json())
         .then(data => {
@@ -103,12 +102,11 @@ function addAnime() {
             anime.isLoading = false;
 
             if (data.exists === false) {
-                // Unfehlbares Jikan-Backup, falls AniWorld komplett streikt
                 fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name)}&limit=1`)
                     .then(r => r.json())
                     .then(jData => {
                         if(jData.data && jData.data.length > 0) {
-                            anime.seasons = [{ number: 1, episodes: jData.data[0].episodes || 12, isVerified: true }];
+                            anime.seasons = [{ number: 1, episodes: jData.data[0].episodes || 12, isVerified: true, isFilm: false }];
                         }
                         anime.hasWarning = true;
                         saveAndRender();
@@ -117,7 +115,6 @@ function addAnime() {
                         saveAndRender();
                     });
             } else {
-                // Das Backend liefert uns direkt das fertige, korrekte Staffel-Array!
                 anime.seasons = data.seasons;
                 if (data.fallback) anime.hasWarning = true;
                 saveAndRender();
@@ -137,7 +134,6 @@ function addAnimeFromData(name, slug, image) {
     addAnime();
 }
 
-// Bereinigt: Kein asynchrones API-Laden mehr beim Tab-Wechsel nötig! Alles ist schon da!
 function switchTab(animeId, seasonNumber) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -161,8 +157,6 @@ function watchEpisodeAuto(animeId, seasonNum, epNum) {
     if (epNum === maxBoxen && seasonNum < totalAvailableSeasons) {
         anime.activeTab = seasonNum + 1;
         localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
-        
-        // Da die Folgestaffel bereits beim Hinzufügen gescannt wurde, rendern wir einfach direkt!
         setTimeout(() => { renderList(); }, 300);
     } else {
         localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
@@ -227,7 +221,8 @@ function saveManualEps(id, seasonNum) {
     saveAndRender();
 }
 
-function toggleEpisode(animeId, seasonNum, epNum) {
+// FIX: Verhindert das Springen der Box, indem wir direkt das HTML-Element manipulieren
+function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
 
@@ -236,13 +231,26 @@ function toggleEpisode(animeId, seasonNum, epNum) {
     
     if (index === -1) {
         anime.watchedEpisodes.push(epKey);
+        btnElement.classList.add('watched');
     } else {
         anime.watchedEpisodes.splice(index, 1);
+        btnElement.classList.remove('watched');
     }
-    saveAndRender();
+
+    // Speichern im LocalStorage im Hintergrund (ohne die Liste visuell zu zerstören)
+    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+
+    // Update der Text-Metadaten auf der Karte, ohne die Box neu zu bauen
+    const curSeason = anime.activeTab || 1;
+    const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
+    let geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
+    
+    const metaContainer = btnElement.closest('.anime-card').querySelector('.anime-meta');
+    if (metaContainer && !anime.isLoading) {
+        metaContainer.innerText = `Gesehen: ${geschauteInStaffel} / ${seasonData.episodes} Folgen`;
+    }
 }
 
-// Der Rest bleibt identisch
 function removeAnime(id) {
     animeList = animeList.filter(a => a.id !== id);
     saveAndRender();
@@ -264,9 +272,7 @@ function renderList() {
     const scrollPositions = {};
     animeList.forEach(anime => {
         const container = document.getElementById(`epScroll_${anime.id}`);
-        if (container) {
-            scrollPositions[anime.id] = container.scrollTop;
-        }
+        if (container) scrollPositions[anime.id] = container.scrollTop;
     });
 
     grid.innerHTML = '';
@@ -290,22 +296,23 @@ function renderList() {
         const curSeason = anime.activeTab || 1;
         const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
         const maxBoxen = seasonData.episodes;
+        const isFilmType = seasonData.isFilm || false;
 
         let nächsteFolge = 1;
         while (anime.watchedEpisodes.includes(`s${curSeason}e${nächsteFolge}`) && nächsteFolge <= maxBoxen) {
             nächsteFolge++;
         }
         
-        const isSeasonFinished = geschauteInStaffel => geschauteInStaffel >= maxBoxen;
         const isAllFinished = isAnimeCompletelyFinished(anime);
-        
         if (nächsteFolge > maxBoxen) nächsteFolge = maxBoxen;
 
         let geschauteInStaffel = anime.watchedEpisodes.filter(key => key.startsWith(`s${curSeason}e`)).length;
         let prozent = Math.min(100, Math.round((geschauteInStaffel / maxBoxen) * 100));
-        const curSeasonFinished = isSeasonFinished(geschauteInStaffel);
+        const curSeasonFinished = geschauteInStaffel >= maxBoxen;
 
-        const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/staffel-${curSeason}/episode-${nächsteFolge}`;
+        // FIX: Erstellt den exakten Pfad je nachdem, ob es ein Film oder eine normale Staffel ist
+        const pathSegment = isFilmType ? 'film' : `staffel-${curSeason}`;
+        const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/${pathSegment}/episode-${nächsteFolge}`;
         const searchUrl = `https://aniworld.to/support/suche?q=${encodeURIComponent(anime.name)}`;
 
         const card = document.createElement('div');
@@ -317,41 +324,37 @@ function renderList() {
             card.style.borderColor = "var(--success)";
         }
 
-        const posterHtml = anime.image 
-            ? `<img class="anime-poster" src="${anime.image}" alt="Poster">`
-            : `<div class="placeholder-poster">📺</div>`;
+        const posterHtml = anime.image ? `<img class="anime-poster" src="${anime.image}" alt="Poster">` : `<div class="placeholder-poster">📺</div>`;
 
         let tabsHtml = '';
         anime.seasons.forEach(s => {
             const isActive = s.number === curSeason ? 'active' : '';
-            tabsHtml += `<button class="tab-btn ${isActive}" onclick="switchTab(${anime.id}, ${s.number})">St. ${s.number}</button>`;
+            const tabName = s.displayName || `St. ${s.number}`;
+            tabsHtml += `<button class="tab-btn ${isActive}" onclick="switchTab(${anime.id}, ${s.number})">${tabName}</button>`;
         });
 
-        const warningHtml = anime.hasWarning 
-            ? `<div style="color: #ffaa00; font-size: 11px; margin-top: 4px; font-weight: bold;">⚠️ Link unbestätigt (Backup aktiv)</div>` 
-            : '';
+        const warningHtml = anime.hasWarning ? `<div style="color: #ffaa00; font-size: 11px; margin-top: 4px; font-weight: bold;">⚠️ Link unbestätigt</div>` : '';
 
         let statusMetaHtml = `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} Folgen`}</div>`;
         if (isAllFinished) {
             statusMetaHtml = `<div style="color: #d4af37; font-weight: 800; font-size: 12px; margin-top: 4px;">🏆 SERIE KOMPLETT BEENDET!</div>`;
         } else if (curSeasonFinished) {
-            statusMetaHtml = `<div style="color: var(--success); font-weight: 800; font-size: 12px; margin-top: 4px;">🎉 STAFFEL ${curSeason} BEENDET!</div>`;
+            statusMetaHtml = `<div style="color: var(--success); font-weight: 800; font-size: 12px; margin-top: 4px;">🎉 ${isFilmType ? 'FILME' : `STAFFEL ${curSeason}`} BEENDET!</div>`;
         }
 
         let contentAreaHtml = '';
-        
         if (anime.isEditing) {
             contentAreaHtml = `
                 <div style="padding: 15px 20px; background: rgba(0,0,0,0.2); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); margin-bottom: 15px;">
                     <div style="margin-bottom: 15px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:bold;">AniWorld Link-Name (Slug):</label>
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:bold;">AniWorld Slug:</label>
                         <div style="display:flex; gap:8px; margin-top:6px;">
                             <input type="text" id="editSlug_${anime.id}" value="${anime.slug}" style="padding: 8px 12px; font-size:13px; flex-grow:1; background:var(--bg-main); color:white; border:1px solid var(--border-color); border-radius:8px;">
                             <button onclick="resyncAnime(${anime.id})" style="padding: 8px 16px; background:var(--accent); color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">↻ Sync</button>
                         </div>
                     </div>
                     <div style="margin-bottom: 15px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:bold;">Folgen in St. ${curSeason}:</label>
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:bold;">Einträge in diesem Tab:</label>
                         <div style="display:flex; gap:8px; margin-top:6px;">
                             <input type="number" id="editEps_${anime.id}_${curSeason}" value="${maxBoxen}" min="1" style="padding: 8px 12px; font-size:13px; width:80px; background:var(--bg-main); color:white; border:1px solid var(--border-color); border-radius:8px;">
                             <button onclick="saveManualEps(${anime.id}, ${curSeason})" style="padding: 8px 16px; background:var(--success); color:#000; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">Speichern</button>
@@ -361,15 +364,16 @@ function renderList() {
                 </div>
             `;
         } else if (anime.isLoading) {
-            contentAreaHtml = '<div style="text-align:center; color:var(--accent); font-size:13px; padding: 30px 0; font-weight:600;">🔄 Synchronisiere mit AniWorld...</div>';
+            contentAreaHtml = '<div style="text-align:center; color:var(--accent); font-size:13px; padding: 30px 0; font-weight:600;">🔄 Synchronisiere...</div>';
         } else {
             let epGridHtml = '';
             for (let i = 1; i <= maxBoxen; i++) {
                 const isWatched = anime.watchedEpisodes.includes(`s${curSeason}e${i}`) ? 'watched' : '';
-                epGridHtml += `<button class="episode-badge ${isWatched}" onclick="toggleEpisode(${anime.id}, ${curSeason}, ${i})">${i}</button>`;
+                // 'this' wird übergeben, um das Springen zu blockieren
+                epGridHtml += `<button class="episode-badge ${isWatched}" onclick="toggleEpisode(this, ${anime.id}, ${curSeason}, ${i})">${i}</button>`;
             }
             contentAreaHtml = `
-                <div class="episode-box-title">Staffel ${curSeason} Episoden:</div>
+                <div class="episode-box-title">${isFilmType ? 'Verfügbare Filme:' : `Staffel ${curSeason} Episoden:`}</div>
                 <div class="episode-grid-container" id="epScroll_${anime.id}">
                     <div class="episode-grid">${epGridHtml}</div>
                 </div>
@@ -378,14 +382,15 @@ function renderList() {
 
         let actionButtonHtml = '';
         if (isAllFinished) {
-            actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #111, #222); color: #747d8c; border:1px solid var(--border-color); cursor: default; box-shadow: none; font-weight:800;">🏆 KOMPLETT GESCHAUET</div>`;
+            actionButtonHtml = `<div class="stream-link" style="background: linear-gradient(135deg, #111, #222); color: #747d8c; border:1px solid var(--border-color); cursor: default; box-shadow: none; font-weight:800;">🏆 KOMPLETT GESEHEN</div>`;
         } else if (curSeasonFinished) {
             const totalAvailableSeasons = anime.seasons ? anime.seasons.length : 1;
             if (curSeason < totalAvailableSeasons) {
-                actionButtonHtml = `<button class="stream-link" style="width:100%; border:none; background-color: var(--success); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.2);" onclick="switchTab(${anime.id}, ${curSeason + 1})">Nächste Staffel laden 🎉</button>`;
+                actionButtonHtml = `<button class="stream-link" style="width:100%; border:none; background-color: var(--success);" onclick="switchTab(${anime.id}, ${curSeason + 1})">Nächsten Tab laden 🎉</button>`;
             }
         } else {
-            actionButtonHtml = `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curSeason}, ${nächsteFolge})">St. ${curSeason} Folge ${nächsteFolge} schauen</a>`;
+            const btnText = isFilmType ? `Film ${nächsteFolge} schauen` : `St. ${curSeason} Folge ${nächsteFolge} schauen`;
+            actionButtonHtml = `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curSeason}, ${nächsteFolge})">${btnText}</a>`;
         }
 
         card.innerHTML = `
@@ -398,17 +403,13 @@ function renderList() {
                     ${warningHtml}
                 </div>
             </div>
-
             <div class="season-tabs">${tabsHtml}</div>
-
             <div class="progress-container">
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" style="width: ${prozent}%"></div>
                 </div>
             </div>
-
             ${contentAreaHtml}
-            
             <div class="card-actions">
                 ${actionButtonHtml}
                 <div style="display:flex; justify-content:space-between; margin-top:12px;">
