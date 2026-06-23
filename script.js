@@ -3,7 +3,7 @@ let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
 const doneTypingInterval = 500;
-let currentRecommendations = []; // Speichert die bereinigten Vorschläge global
+let currentRecommendations = []; 
 
 const API_BASE = '/api/anime';
 
@@ -143,7 +143,7 @@ async function loadEpisodesOnDemand(animeId, seasonNumber) {
     
     try {
         const res = await fetch(`${API_BASE}?slug=${anime.slug}&getEpisodesFor=${pathSegment}`).then(r => r.json());
-        seasonData.episodes = res.episodes || 12;
+        seasonData.episodes = res.episodes !== undefined ? res.episodes : 12;
         seasonData.isVerified = true;
     } catch (e) {
         seasonData.episodes = 12;
@@ -233,7 +233,6 @@ function resyncAnime(id) {
         });
 }
 
-// Fix: "animeList" shadow variable Fehler behoben
 function saveManualEps(id, seasonNum) {
     const anime = animeList.find(a => a.id === id);
     if (!anime) return;
@@ -402,6 +401,8 @@ function renderList() {
                 </div>`;
         } else if (anime.isLoading) {
             contentAreaHtml = '<div style="text-align:center;color:var(--accent);font-size:13px;padding:30px 0;font-weight:600;">🔄 Synchronisiere mit AniWorld...</div>';
+        } else if (!seasonData.isVerified && maxBoxen === 0) {
+            contentAreaHtml = '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:30px 0;font-weight:600;">🎬 Klicke auf den Tab, um Filme zu laden...</div>';
         } else {
             const epBadges = Array.from({ length: maxBoxen }, (_, i) => {
                 const n = i + 1;
@@ -470,7 +471,6 @@ function loadRecommendations() {
         .then(r => r.json())
         .then(data => {
             if (data.data) {
-                // PREMIUM UX: Radikale Zusammenführung von Spin-offs & Sub-Staffeln zu Hauptfranchises
                 const processed = data.data.map(anime => {
                     let title = anime.title_english || anime.title;
                     const lowerTitle = title.toLowerCase();
@@ -487,7 +487,7 @@ function loadRecommendations() {
                         title = title.replace(/s(eason)?\s*\d+/gi, '')
                                      .replace(/part\s*\d+/gi, '')
                                      .replace(/cour\s*\d+/gi, '')
-                                     .split(":")[0] // Entfernt Episodenuntertitel nach Doppelpunkten
+                                     .split(":")[0] 
                                      .trim();
                     }
                     
@@ -499,7 +499,6 @@ function loadRecommendations() {
                     };
                 });
 
-                // Filtert doppelte Franchises innerhalb der Vorschlagsliste heraus
                 const uniqueRecs = [];
                 const seenSlugs = new Set();
                 processed.forEach(item => {
@@ -520,7 +519,6 @@ function renderRecommendations() {
     if (!recGrid) return;
     recGrid.innerHTML = '';
 
-    // Filtert Vorschläge heraus, die sich bereits in der aktiven Userliste befinden
     const filtered = currentRecommendations.filter(rec => !animeList.some(a => a.slug === rec.slug));
 
     filtered.slice(0, 4).forEach(rec => {
