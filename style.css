@@ -1,17 +1,19 @@
+/* ==============================================================================
+   1. GLOBAL STYLES & VARIABLES
+   ============================================================================== */
 :root {
     --bg-main: #08080c;
     --bg-card: #11111a;
     --bg-input: #171724;
     --border-color: #222235;
-    --accent: #ff4757; /* Moderner, leuchtender Korallton */
+    --accent: #ff4757;
     --accent-hover: #ff6b81;
-    --success: #2ed573; /* Sanftes Smaragdgrün */
+    --success: #2ed573;
     --text-main: #ffffff;
     --text-muted: #747d8c;
     --font-app: 'Plus Jakarta Sans', -apple-system, sans-serif;
 }
 
-/* Grundaufbau & Reset */
 * {
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
@@ -31,7 +33,9 @@ body {
     margin: 0 auto;
 }
 
-/* Header Bereich */
+/* ==============================================================================
+   2. APP HEADER
+   ============================================================================== */
 .app-header {
     text-align: center;
     margin-bottom: 40px;
@@ -56,7 +60,9 @@ body {
     margin: 8px 0 0 0;
 }
 
-/* Das neue, saubere Kontroll-Panel */
+/* ==============================================================================
+   3. CONTROL PANEL & INPUTS
+   ============================================================================== */
 .control-panel {
     display: flex;
     justify-content: space-between;
@@ -82,7 +88,6 @@ body {
     max-width: 380px;
 }
 
-/* Inputs & Selektoren */
 input, select {
     width: 100%;
     padding: 14px 18px;
@@ -179,18 +184,15 @@ button {
     transform: translateY(-1px);
 }
 
-.btn-primary:active {
-    transform: translateY(1px);
-}
-
-/* Das Anime-Grid */
+/* ==============================================================================
+   4. ANIME GRID & CARDS
+   ============================================================================== */
 .anime-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 24px;
 }
 
-/* Die High-End Anime Karte */
 .anime-card {
     background-color: var(--bg-card);
     border-radius: 20px;
@@ -253,7 +255,9 @@ button {
     font-weight: 600;
 }
 
-/* Die eleganten Staffel-Tabs */
+/* ==============================================================================
+   5. TABS & PROGRESS BAR
+   ============================================================================== */
 .season-tabs {
     display: flex;
     gap: 6px;
@@ -270,11 +274,7 @@ button {
     border-radius: 8px;
     font-size: 12px;
     font-weight: 700;
-}
-
-.tab-btn:hover {
-    color: var(--text-main);
-    background-color: #222235;
+    cursor: pointer;
 }
 
 .tab-btn.active {
@@ -283,7 +283,6 @@ button {
     border-color: var(--accent);
 }
 
-/* Fortschrittsbalken */
 .progress-container {
     padding: 0 20px;
     margin-bottom: 16px;
@@ -301,10 +300,12 @@ button {
     height: 100%;
     width: 0%;
     box-shadow: 0 0 8px var(--success);
-    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: width 0.4s ease;
 }
 
-/* Das Episoden-Grid */
+/* ==============================================================================
+   6. EPISODEN & FILME GRID-SYSTEM (VISUELL ABSOLUT STABIL)
+   ============================================================================== */
 .episode-box-title {
     font-size: 11px;
     text-transform: uppercase;
@@ -315,33 +316,32 @@ button {
     letter-spacing: 1px;
 }
 
+/* Scrollbarer Container für Kacheln */
 .episode-grid-container {
     padding: 0 20px 20px 20px;
     max-height: 125px;
     overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 
-/* Styling der Custom Dark Scrollbar */
 .episode-grid-container::-webkit-scrollbar {
     width: 4px;
 }
-.episode-grid-container::-webkit-scrollbar-track {
-    background: transparent;
-}
+
 .episode-grid-container::-webkit-scrollbar-thumb {
     background: #222235;
     border-radius: 10px;
 }
-.episode-grid-container::-webkit-scrollbar-thumb:hover {
-    background: var(--accent);
-}
 
+/* 6er-Raster für Folgen UND Filme */
 .episode-grid {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
     gap: 6px;
 }
 
+/* Kacheln-Design – verhindert Springen bei Klick */
 .episode-badge {
     background-color: var(--bg-input);
     color: var(--text-main);
@@ -351,21 +351,22 @@ button {
     border-radius: 8px;
     font-size: 13px;
     font-weight: 700;
-}
-
-.episode-badge:hover {
-    background-color: #222235;
-    border-color: #3e3e5c;
+    cursor: pointer;
+    display: inline-block;
+    width: 100%;
+    box-sizing: border-box;
+    transition: background-color 0.1s ease, border-color 0.1s ease;
 }
 
 .episode-badge.watched {
     background-color: var(--success);
     color: #000000;
     border-color: var(--success);
-    box-shadow: 0 0 10px rgba(46, 213, 115, 0.2);
 }
 
-/* Card Actions unten */
+/* ==============================================================================
+   7. ACTIONS & FOOTER LINKS
+   ============================================================================== */
 .card-actions {
     padding: 20px;
     margin-top: auto;
@@ -373,7 +374,6 @@ button {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    background-color: rgba(23, 23, 36, 0.2);
 }
 
 .stream-link {
@@ -385,13 +385,7 @@ button {
     border-radius: 12px;
     font-weight: 700;
     font-size: 14px;
-    transition: all 0.2s ease;
-    box-shadow: 0 4px 12px rgba(255, 71, 87, 0.2);
-}
-
-.stream-link:hover {
-    background-color: var(--accent-hover);
-    box-shadow: 0 6px 16px rgba(255, 71, 87, 0.3);
+    display: block;
 }
 
 .search-fallback {
@@ -400,14 +394,11 @@ button {
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    transition: color 0.15s ease;
 }
 
-.search-fallback:hover {
-    color: var(--accent);
-}
-
-/* Empfehlungs-Ecke am Seitenende */
+/* ==============================================================================
+   8. RECOMMENDATIONS
+   ============================================================================== */
 .recommendations-container {
     margin-top: 80px;
     border-top: 1px solid var(--border-color);
@@ -418,7 +409,6 @@ button {
     font-size: 1.6em;
     font-weight: 800;
     margin-bottom: 24px;
-    letter-spacing: -0.5px;
 }
 
 .recommendation-btn {
@@ -427,12 +417,6 @@ button {
     border: 1px solid var(--border-color);
     padding: 12px;
     border-radius: 10px;
-    font-size: 13px;
     width: 100%;
-}
-
-.recommendation-btn:hover {
-    background-color: var(--success);
-    color: #000;
-    border-color: var(--success);
+    cursor: pointer;
 }
