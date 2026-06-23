@@ -1,4 +1,4 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV4')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV5')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
@@ -31,30 +31,32 @@ function showSuggestions() {
     list.innerHTML = '<div class="autocomplete-info">🔍 Suche läuft...</div>';
     list.style.display = 'block';
 
-    fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
-        .then(res => res.json())
-        .then(data => {
-            list.innerHTML = '';
-            if (data.data && data.data.length > 0) {
-                data.data.forEach(anime => {
-                    const jpTitle = anime.title;
-                    const engTitle = anime.title_english;
-                    const displayTitle = engTitle ? `${engTitle} (${jpTitle})` : jpTitle;
-                    const name = engTitle || jpTitle;
-                    const imageUrl = anime.images?.jpg?.large_image_url || null;
+    typingTimer = setTimeout(() => {
+        fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
+            .then(res => res.json())
+            .then(data => {
+                list.innerHTML = '';
+                if (data.data && data.data.length > 0) {
+                    data.data.forEach(anime => {
+                        const jpTitle = anime.title;
+                        const engTitle = anime.title_english;
+                        const displayTitle = engTitle ? `${engTitle} (${jpTitle})` : jpTitle;
+                        const name = engTitle || jpTitle;
+                        const imageUrl = anime.images?.jpg?.large_image_url || null;
 
-                    const item = document.createElement('div');
-                    item.className = 'autocomplete-item';
-                    item.innerText = displayTitle;
-                    item.onclick = () => selectAnime(name, imageUrl, jpTitle);
-                    list.appendChild(item);
-                });
-            } else {
-                list.innerHTML = '<div class="autocomplete-info">Keine Ergebnisse gefunden</div>';
-            }
-        }).catch(() => {
-            list.innerHTML = '<div class="autocomplete-info">⚠️ Verbindung fehlgeschlagen.</div>';
-        });
+                        const item = document.createElement('div');
+                        item.className = 'autocomplete-item';
+                        item.innerText = displayTitle;
+                        item.onclick = () => selectAnime(name, imageUrl, jpTitle);
+                        list.appendChild(item);
+                    });
+                } else {
+                    list.innerHTML = '<div class="autocomplete-info">Keine Ergebnisse gefunden</div>';
+                }
+            }).catch(() => {
+                list.innerHTML = '<div class="autocomplete-info">⚠️ Verbindung fehlgeschlagen.</div>';
+            });
+    }, doneTypingInterval);
 }
 
 function selectAnime(name, image, jpTitle) {
@@ -81,18 +83,17 @@ async function addAnime() {
         isLoading: true,
         isEditing: false,
         hasWarning: false,
-        seasons: [{ number: 1, episodes: 0, isVerified: false, isFilm: false }],
+        seasons: [{ number: 1, episodes: 0, isVerified: false }],
         watchedEpisodes: []
     };
 
-    animeList.unshift(newAnime); // Fügt den Anime ganz oben ein
+    animeList.unshift(newAnime);
     nameInput.value = '';
     currentSelectedAnime = null;
     saveAndRender();
 
     const searchQuery = jpTitle || name;
     try {
-        // 1. WIR HOLEN DEN ECHTEN ANIWORLD SLUG
         const searchResp = await fetch(`${API_BASE}?search=${encodeURIComponent(searchQuery)}`).then(r => r.json());
         const anime = animeList.find(a => a.id === newAnime.id);
         if (!anime) return;
@@ -104,18 +105,17 @@ async function addAnime() {
             }, searchResp.results[0]);
         }
 
-        // 2. WIR HOLEN DIE STRUKTUR DIREKT VON ANIWORLD
         const dataResp = await fetch(`${API_BASE}?slug=${anime.slug}`).then(r => r.json());
 
         if (dataResp.exists) {
             anime.seasons = dataResp.seasons;
             if (dataResp.fallback) anime.hasWarning = true;
-            // 3. WIR LADEN DIE FOLGENZAHL DES ERSTEN TABS NACH
+            // Lade die Folgen der ersten Staffel sofort
             loadEpisodesOnDemand(anime.id, 1);
         } else {
             anime.isLoading = false;
             anime.hasWarning = true;
-            anime.seasons = [{ number: 1, episodes: 12, isVerified: true, isFilm: false }];
+            anime.seasons = [{ number: 1, episodes: 12, isVerified: true }];
             saveAndRender();
         }
 
@@ -139,10 +139,8 @@ async function loadEpisodesOnDemand(animeId, seasonNumber) {
     anime.isLoading = true;
     renderList();
 
-    const pathSegment = seasonData.isFilm ? 'film' : `staffel-${seasonNumber}`;
-    
     try {
-        const res = await fetch(`${API_BASE}?slug=${anime.slug}&getEpisodesFor=${pathSegment}`).then(r => r.json());
+        const res = await fetch(`${API_BASE}?slug=${anime.slug}&getEpisodesForSeason=${seasonNumber}`).then(r => r.json());
         seasonData.episodes = res.episodes !== undefined ? res.episodes : 12;
         seasonData.isVerified = true;
     } catch (e) {
@@ -189,10 +187,10 @@ function watchEpisodeAuto(animeId, seasonNum, epNum) {
 
     if (epNum === maxBoxen && seasonNum < anime.seasons.length) {
         anime.activeTab = seasonNum + 1;
-        localStorage.setItem('myAnimeListFullstackV4', JSON.stringify(animeList));
+        localStorage.setItem('myAnimeListFullstackV5', JSON.stringify(animeList));
         switchTab(animeId, seasonNum + 1);
     } else {
-        localStorage.setItem('myAnimeListFullstackV4', JSON.stringify(animeList));
+        localStorage.setItem('myAnimeListFullstackV5', JSON.stringify(animeList));
         setTimeout(() => renderList(), 300);
     }
 }
@@ -245,16 +243,14 @@ function saveManualEps(id, seasonNum) {
     saveAndRender();
 }
 
-function addManualSeason(id, isFilm) {
+function addManualSeason(id) {
     const anime = animeList.find(a => a.id === id);
     if (!anime) return;
     const nextNum = anime.seasons.length + 1;
     anime.seasons.push({
         number: nextNum,
-        episodes: isFilm ? 1 : 12,
-        isVerified: true,
-        isFilm,
-        displayName: isFilm ? '🎬 Filme' : undefined
+        episodes: 12,
+        isVerified: true
     });
     anime.activeTab = nextNum;
     saveAndRender();
@@ -274,7 +270,7 @@ function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
         btnElement.classList.remove('watched');
     }
 
-    localStorage.setItem('myAnimeListFullstackV4', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV5', JSON.stringify(animeList));
 
     const curSeason = anime.activeTab || 1;
     const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
@@ -282,7 +278,7 @@ function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
     
     const meta = btnElement.closest('.anime-card')?.querySelector('.anime-meta');
     if (meta && !anime.isLoading) {
-        meta.innerText = `Gesehen: ${geschaut} / ${seasonData.episodes} ${seasonData.isFilm ? 'Filme' : 'Folgen'}`;
+        meta.innerText = `Gesehen: ${geschaut} / ${seasonData.episodes} Folgen`;
     }
 
     const progressBarFill = btnElement.closest('.anime-card')?.querySelector('.progress-bar-fill');
@@ -303,7 +299,7 @@ function changeSort() {
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListFullstackV4', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV5', JSON.stringify(animeList));
     renderList();
     renderRecommendations(); 
 }
@@ -329,7 +325,6 @@ function renderList() {
         const curSeason = anime.activeTab || 1;
         const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
         const maxBoxen = seasonData.episodes;
-        const isFilmType = seasonData.isFilm || false;
 
         let nächsteFolge = 1;
         while (anime.watchedEpisodes.includes(`s${curSeason}e${nächsteFolge}`) && nächsteFolge <= maxBoxen) nächsteFolge++;
@@ -340,8 +335,7 @@ function renderList() {
         const prozent = maxBoxen > 0 ? Math.min(100, Math.round((geschaut / maxBoxen) * 100)) : 0;
         const curSeasonFinished = maxBoxen > 0 && geschaut >= maxBoxen;
 
-        const pathSegment = isFilmType ? 'film' : `staffel-${curSeason}`;
-        const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/${pathSegment}/episode-${nächsteFolge}`;
+        const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/staffel-${curSeason}/episode-${nächsteFolge}`;
         const searchUrl = `https://aniworld.to/support/suche?q=${encodeURIComponent(anime.name)}`;
 
         const card = document.createElement('div');
@@ -357,8 +351,7 @@ function renderList() {
 
         const tabsHtml = anime.seasons.map(s => {
             const active = s.number === curSeason ? 'active' : '';
-            const tabName = s.displayName || `St. ${s.number}`;
-            return `<button class="tab-btn ${active}" onclick="switchTab(${anime.id}, ${s.number})">${tabName}</button>`;
+            return `<button class="tab-btn ${active}" onclick="switchTab(${anime.id}, ${s.number})">St. ${s.number}</button>`;
         }).join('');
 
         const warningHtml = anime.hasWarning ? `<div style="color:#ffaa00;font-size:11px;margin-top:4px;font-weight:bold;">⚠️ Link unbestätigt</div>` : '';
@@ -367,9 +360,9 @@ function renderList() {
         if (isAllFinished) {
             statusMetaHtml = `<div style="color:#d4af37;font-weight:800;font-size:12px;margin-top:4px;">🏆 SERIE KOMPLETT BEENDET!</div>`;
         } else if (curSeasonFinished) {
-            statusMetaHtml = `<div style="color:var(--success);font-weight:800;font-size:12px;margin-top:4px;">🎉 ${isFilmType ? 'ALLE FILME' : `STAFFEL ${curSeason}`} BEENDET!</div>`;
+            statusMetaHtml = `<div style="color:var(--success);font-weight:800;font-size:12px;margin-top:4px;">🎉 STAFFEL ${curSeason} BEENDET!</div>`;
         } else {
-            statusMetaHtml = `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschaut} / ${maxBoxen} ${isFilmType ? 'Filme' : 'Folgen'}`}</div>`;
+            statusMetaHtml = `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschaut} / ${maxBoxen} Folgen`}</div>`;
         }
 
         let contentAreaHtml;
@@ -384,7 +377,7 @@ function renderList() {
                         </div>
                     </div>
                     <div style="margin-bottom:12px;">
-                        <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:bold;">Einträge in aktuellem Tab</label>
+                        <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:bold;">Folgen in aktuellem Tab</label>
                         <div style="display:flex;gap:8px;margin-top:6px;">
                             <input type="number" id="editEps_${anime.id}_${curSeason}" value="${maxBoxen}" min="1" style="padding:8px 12px;font-size:13px;width:80px;background:var(--bg-main);color:white;border:1px solid var(--border-color);border-radius:8px;">
                             <button onclick="saveManualEps(${anime.id}, ${curSeason})" style="padding:8px 16px;background:var(--success);color:#000;border:none;border-radius:8px;cursor:pointer;font-weight:bold;">Speichern</button>
@@ -392,17 +385,16 @@ function renderList() {
                     </div>
                     <div style="margin-bottom:12px;">
                         <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:bold;">Tabs verwalten</label>
-                        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
-                            <button onclick="addManualSeason(${anime.id}, false)" style="padding:6px 12px;background:var(--bg-input);color:var(--text-main);border:1px solid var(--border-color);border-radius:8px;cursor:pointer;font-size:12px;font-weight:bold;">+ Staffel</button>
-                            <button onclick="addManualSeason(${anime.id}, true)" style="padding:6px 12px;background:var(--bg-input);color:var(--text-main);border:1px solid var(--border-color);border-radius:8px;cursor:pointer;font-size:12px;font-weight:bold;">🎬 + Filme</button>
+                        <div style="display:flex;gap:8px;margin-top:6px;">
+                            <button onclick="addManualSeason(${anime.id})" style="padding:6px 12px;background:var(--bg-input);color:var(--text-main);border:1px solid var(--border-color);border-radius:8px;cursor:pointer;font-size:12px;font-weight:bold;">+ Staffel hinzufügen</button>
                         </div>
                     </div>
                     <button onclick="toggleEdit(${anime.id})" style="width:100%;padding:10px;background:transparent;color:var(--text-muted);border:1px solid var(--border-color);border-radius:8px;cursor:pointer;font-weight:bold;">Schließen</button>
                 </div>`;
         } else if (anime.isLoading) {
-            contentAreaHtml = '<div style="text-align:center;color:var(--accent);font-size:13px;padding:30px 0;font-weight:600;">🔄 Synchronisiere mit AniWorld...</div>';
+            contentAreaHtml = '<div style="text-align:center;color:var(--accent);font-size:13px;padding:30px 0;font-weight:600;">🔄 Synchronisiere Daten...</div>';
         } else if (!seasonData.isVerified && maxBoxen === 0) {
-            contentAreaHtml = '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:30px 0;font-weight:600;">🎬 Klicke auf den Tab, um Filme zu laden...</div>';
+            contentAreaHtml = '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:30px 0;font-weight:600;">Folgen werden geladen...</div>';
         } else {
             const epBadges = Array.from({ length: maxBoxen }, (_, i) => {
                 const n = i + 1;
@@ -410,7 +402,7 @@ function renderList() {
                 return `<button class="episode-badge ${watched}" onclick="toggleEpisode(this,${anime.id},${curSeason},${n})">${n}</button>`;
             }).join('');
             contentAreaHtml = `
-                <div class="episode-box-title">${isFilmType ? '🎬 Filme:' : `Staffel ${curSeason} – Episoden:`}</div>
+                <div class="episode-box-title">Staffel ${curSeason} – Episoden:</div>
                 <div class="episode-grid-container" id="epScroll_${anime.id}">
                     <div class="episode-grid">${epBadges}</div>
                 </div>`;
@@ -420,10 +412,9 @@ function renderList() {
         if (isAllFinished) {
             actionButtonHtml = `<div class="stream-link" style="background:linear-gradient(135deg,#111,#222);color:#747d8c;border:1px solid var(--border-color);cursor:default;font-weight:800;">🏆 KOMPLETT GESEHEN</div>`;
         } else if (curSeasonFinished && curSeason < anime.seasons.length) {
-            actionButtonHtml = `<button class="stream-link" style="width:100%;border:none;background-color:var(--success);" onclick="switchTab(${anime.id},${curSeason + 1})">Nächsten Tab laden 🎉</button>`;
+            actionButtonHtml = `<button class="stream-link" style="width:100%;border:none;background-color:var(--success);" onclick="switchTab(${anime.id},${curSeason + 1})">Nächste Staffel laden 🎉</button>`;
         } else if (!curSeasonFinished && maxBoxen > 0) {
-            const btnText = isFilmType ? `Film ${nächsteFolge} schauen` : `St. ${curSeason} Folge ${nächsteFolge} schauen`;
-            actionButtonHtml = `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id},${curSeason},${nächsteFolge})">${btnText}</a>`;
+            actionButtonHtml = `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id},${curSeason},${nächsteFolge})">St. ${curSeason} Folge ${nächsteFolge} schauen</a>`;
         }
 
         card.innerHTML = `
@@ -475,20 +466,12 @@ function loadRecommendations() {
                     let title = anime.title_english || anime.title;
                     const lowerTitle = title.toLowerCase();
                     
-                    if (lowerTitle.includes("jojo")) {
-                        title = "JoJo's Bizarre Adventure";
-                    } else if (lowerTitle.includes("re:zero") || lowerTitle.includes("re-zero")) {
-                        title = "Re:ZERO Starting Life in Another World";
-                    } else if (lowerTitle.includes("demon slayer")) {
-                        title = "Demon Slayer Kimetsu no Yaiba";
-                    } else if (lowerTitle.includes("attack on titan")) {
-                        title = "Attack on Titan";
-                    } else {
-                        title = title.replace(/s(eason)?\s*\d+/gi, '')
-                                     .replace(/part\s*\d+/gi, '')
-                                     .replace(/cour\s*\d+/gi, '')
-                                     .split(":")[0] 
-                                     .trim();
+                    if (lowerTitle.includes("jojo")) title = "JoJo's Bizarre Adventure";
+                    else if (lowerTitle.includes("re:zero") || lowerTitle.includes("re-zero")) title = "Re:ZERO Starting Life in Another World";
+                    else if (lowerTitle.includes("demon slayer")) title = "Demon Slayer Kimetsu no Yaiba";
+                    else if (lowerTitle.includes("attack on titan")) title = "Attack on Titan";
+                    else {
+                        title = title.replace(/s(eason)?\s*\d+/gi, '').replace(/part\s*\d+/gi, '').replace(/cour\s*\d+/gi, '').split(":")[0].trim();
                     }
                     
                     return {
@@ -544,7 +527,6 @@ document.addEventListener('click', e => {
     if (e.target.id !== 'animeName') document.getElementById('autocompleteList').style.display = 'none';
 });
 
-// Zwingt die Liste in den komplett sauberen Speicher-Schacht V4
-localStorage.setItem('myAnimeListFullstackV4', JSON.stringify(animeList));
+localStorage.setItem('myAnimeListFullstackV5', JSON.stringify(animeList));
 renderList();
 loadRecommendations();
