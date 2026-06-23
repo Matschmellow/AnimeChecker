@@ -1,52 +1,136 @@
-// api/anime.js (Auszug für die optimierte Logik)
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-// ... HEADERS wie gehabt ...
+const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml',
+    'Accept-Language': 'de-DE,de;q=0.9',
+    'Referer': 'https://aniworld.to/'
+};
 
-async function getVerifiedSlugAndData(query) {
+// Holt die echten Episoden, indem er NUR Links zählt, die den aktuellen Anime-Pfad enthalten
+async function fetchEpisodeCount(slug, seasonNum, isFilm) {
     try {
-        // 1. Suche direkt auf AniWorld via AJAX
-        const searchUrl = `https://aniworld.to/ajax/search`;
-        const { data } = await axios.post(searchUrl, `keyword=${encodeURIComponent(query)}`, {
-            headers: { ...HEADERS, 'X-Requested-With': 'XMLHttpRequest' },
-            timeout: 4000
-        });
-
+        const path = isFilm ? 'film' : `staffel-${seasonNum}`;
+        const url = `https://aniworld.to/anime/stream/${slug}/${path}`;
+        const { data } = await axios.get(url, { headers: HEADERS, timeout: 6000 });
         const $ = cheerio.load(data);
-        let directSlug = null;
+
+        const episodes = new Set();
         
-        // Nimm den ersten Treffer aus der Suche
-        $('a[href*="/anime/stream/"]').each((_, el) => {
+        // PRÄZISE: Wir suchen NUR Links, die exakt zu diesem Anime-Stream gehören!
+        $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || '';
-            const match = href.match(/\/anime\/stream\/([^\/]+)\/?$/);
-            if (match && !directSlug) {
-                directSlug = match[1]; 
+            // Der Link MUSS den exakten Pfad enthalten, z.B. /stream/re-zero.../staffel-1/episode-5
+            if (href.includes(`/stream/${slug}/${path}/episode-`)) {
+                const match = href.match(/\/episode-(\d+)/);
+                if (match) {
+                    episodes.add(parseInt(match[1]));
+                }
             }
         });
 
-        if (directSlug) {
-            // Wenn der Slug existiert, holen wir die Staffeln über dein Scrape-System
-            const seasons = await scrapeAnimeSeasons(directSlug);
-            return { exists: true, slug: directSlug, seasons, fallback: false };
-        }
-        
-        // 2. FALLBACK: Wenn AniWorld-Suche nichts liefert, nutzen wir Jikan (MyAnimeList) 
-        // um zumindest die echten Episodendaten für das Dashboard zu haben
-        const jikanRes = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`);
-        if (jikanRes.data.data && jikanRes.data.data.length > 0) {
-            const anime = jikanRes.data.data[0];
-            return {
-                exists: true,
-                slug: query.toLowerCase().replace(/[^a-z0-9]/g, '-'), // Not-Slug
-                seasons: [{ number: 1, episodes: anime.episodes || 12, isVerified: false, isFilm: anime.type === 'Movie' }],
-                fallback: true // Signalisiert dem Frontend: URL könnte falsch sein!
-            };
-        }
-
-        return { exists: false };
+        return episodes.size > 0 ? Math.max(...episodes) : 1;
     } catch (e) {
-        return { exists: false, error: e.message };
+        return e.response?.status === 404 ? 0 : 1;
     }
 }
+
+async function searchAniworld(query) {
+    try {
+        const url = `https://aniworld.to/ajax/search`;
+        const { data } = await axios.post(url, `keyword=${encodeURIComponent(query)}`, {
+            headers: { ...HEADERS, 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+            timeout: 5000
+        });
+
+        const $ = cheerio.load(data);
+        const results = [];
+        $('a[href*="/anime/stream/"]').each((_, el) => {
+            const href = $(el).attr('href') || '';
+            const match = href.match(/\/anime\/stream\/([^\/]+)\/?$/);
+            if (match) results.push(match[1]);
+        });
+        return [...new Set(results)];
+    } catch (e) {
+        return [];
+    }
+}
+
+async function scrapeAnimeSeasons(slug) {
+    const url = `https://aniworld.to/anime/stream/${slug}`;
+    const { data } = await axios.get(url, { headers: HEADERS, timeout: 6000 });
+    const $ = cheerio.load(data);
+
+    const seasonNums = new Set();
+    let hasFilms = false;
+
+    // PRÄZISE: Nur Staffellinks für DIESEN spezifischen Anime zählen
+    $('a[href]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        if (href.includes(`/stream/${slug}/staffel-`)) {
+            const mSeason = href.match(/\/staffel-(\d+)/);
+            if (mSeason) seasonNums.add(parseInt(mSeason[1]));
+        }
+        if (href.includes(`/stream/${slug}/film`)) {
+            hasFilms = true;
+        }
+    });
+
+    const nums = seasonNums.size > 0 ? [...seasonNums].sort((a, b) => a - b) : [1];
+
+    const [seasonResults, filmCount] = await Promise.all([
+        Promise.all(nums.map(async n => ({
+            number: n,
+            episodes: await fetchEpisodeCount(slug, n, false),
+            isVerified: true,
+            isFilm: false
+        }))),
+        hasFilms ? fetchEpisodeCount(slug, 0, true) : Promise.resolve(0)
+    ]);
+
+    const seasons = seasonResults.filter(s => s.episodes > 0);
+    if (seasons.length === 0) seasons.push({ number: 1, episodes: 12, isVerified: false, isFilm: false });
+
+    if (hasFilms && filmCount > 0) {
+        seasons.push({
+            number: Math.max(...seasons.map(s => s.number)) + 1,
+            episodes: filmCount,
+            isVerified: true,
+            isFilm: true,
+            displayName: '🎬 Filme'
+        });
+    }
+
+    return seasons;
+}
+
+module.exports = async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('Cache-Control', 's-maxage=3600');
+
+    const { slug, search } = req.query;
+
+    if (search) {
+        const results = await searchAniworld(search);
+        return res.status(200).json({ results });
+    }
+
+    if (!slug) return res.status(200).json({ exists: false, error: 'Kein Slug' });
+
+    try {
+        const seasons = await scrapeAnimeSeasons(slug);
+        return res.status(200).json({ exists: true, slug, seasons });
+    } catch (error) {
+        if (error.response?.status === 404) {
+            return res.status(200).json({ exists: false, slug });
+        }
+        return res.status(200).json({
+            exists: true, slug,
+            seasons: [{ number: 1, episodes: 12, isVerified: false, isFilm: false }],
+            fallback: true
+        });
+    }
+};
 
