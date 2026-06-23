@@ -1,11 +1,13 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV3')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV2')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
 const doneTypingInterval = 500;
+let currentRecommendations = []; // Speichert die geladenen Top-Animes global
 
 const API_BASE = '/api/anime';
 
+// Generiert einen standardisierten Backup-Slug
 function generateSlug(title) {
     return title.toLowerCase()
         .replace(/\([^)]+\)/g, '')
@@ -104,14 +106,11 @@ async function addAnime() {
             }, searchResp.results[0]);
         }
 
-        // Schnell-Scan abfragen (nur Struktur, keine Folgen)
         const dataResp = await fetch(`${API_BASE}?slug=${anime.slug}`).then(r => r.json());
 
         if (dataResp.exists) {
             anime.seasons = dataResp.seasons;
             if (dataResp.fallback) anime.hasWarning = true;
-            
-            // Sofort die Folgen für die allererste Staffel nachladen (Lazy Loading Trigger)
             loadEpisodesOnDemand(anime.id, 1);
         } else {
             anime.isLoading = false;
@@ -126,7 +125,6 @@ async function addAnime() {
     }
 }
 
-// Kern-Feature: Lädt Episoden erst, wenn der Tab wirklich aktiv wird!
 async function loadEpisodesOnDemand(animeId, seasonNumber) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -169,8 +167,6 @@ function addAnimeFromData(name, slug, image) {
         return;
     }
     currentSelectedAnime = { name, image, jpTitle: null, slug };
-    const nameInput = document.getElementById('animeName');
-    nameInput.value = name;
     addAnime();
 }
 
@@ -178,8 +174,6 @@ function switchTab(animeId, seasonNumber) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
     anime.activeTab = seasonNumber;
-    
-    // Prüfen, ob wir für diesen Tab die Folgen erst vom Server holen müssen
     loadEpisodesOnDemand(animeId, seasonNumber);
 }
 
@@ -240,7 +234,7 @@ function resyncAnime(id) {
 }
 
 function saveManualEps(id, seasonNum) {
-    const anime = animeList.find(a => a.id === id);
+    const animeList = animeList.find(a => a.id === id);
     if (!anime) return;
     let eps = parseInt(document.getElementById(`editEps_${id}_${seasonNum}`).value);
     if (isNaN(eps) || eps < 1) eps = 1;
@@ -266,7 +260,6 @@ function addManualSeason(id, isFilm) {
     saveAndRender();
 }
 
-// PREMIUM UX: Verhindert ruckelndes Springen der Kacheln im iPad-Browser komplett
 function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -312,6 +305,7 @@ function changeSort() {
 function saveAndRender() {
     localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
     renderList();
+    renderRecommendations(); // Rendert die Vorschläge direkt neu, um hinzugefügte Elemente auszublenden
 }
 
 function renderList() {
@@ -406,7 +400,7 @@ function renderList() {
                     <button onclick="toggleEdit(${anime.id})" style="width:100%;padding:10px;background:transparent;color:var(--text-muted);border:1px solid var(--border-color);border-radius:8px;cursor:pointer;font-weight:bold;">Schließen</button>
                 </div>`;
         } else if (anime.isLoading) {
-            contentAreaHtml = '<div style="text-align:center;color:var(--accent);font-size:13px;padding:30px 0;font-weight:600;">🔄 Synchronisiere Daten...</div>';
+            contentAreaHtml = '<div style="text-align:center;color:var(--accent);font-size:13px;padding:30px 0;font-weight:600;">🔄 Synchronisiere mit AniWorld...</div>';
         } else {
             const epBadges = Array.from({ length: maxBoxen }, (_, i) => {
                 const n = i + 1;
@@ -471,38 +465,65 @@ function isAnimeCompletelyFinished(anime) {
 }
 
 function loadRecommendations() {
-    const recGrid = document.getElementById('recommendationsGrid');
-    fetch('https://api.jikan.moe/v4/top/anime?limit=4')
+    // Erhöht das Limit beim API-Fetch leicht, um genug Nachrücker zu haben, wenn Elemente ausgeblendet werden
+    fetch('https://api.jikan.moe/v4/top/anime?limit=10')
         .then(r => r.json())
         .then(data => {
-            recGrid.innerHTML = '';
-            data.data?.forEach(anime => {
-                const title = anime.title_english || anime.title;
-                const slug = generateSlug(title);
-                const image = anime.images?.jpg?.large_image_url || null;
-                const card = document.createElement('div');
-                card.className = 'anime-card';
-                card.innerHTML = `
-                    <div class="anime-header-block" style="padding-bottom:5px;">
-                        ${image ? `<img class="anime-poster" src="${image}" alt="Poster">` : `<div class="placeholder-poster">📺</div>`}
-                        <div class="anime-info">
-                            <h3 class="anime-title">${title}</h3>
-                            <div class="anime-meta">Score: ⭐ ${anime.score || 'N/A'}</div>
-                        </div>
-                    </div>
-                    <div class="card-actions" style="border-top:none;">
-                        <button class="recommendation-btn" onclick="addAnimeFromData('${title.replace(/'/g, "\\'")}','${slug}','${image}')">+ Hinzufügen</button>
-                    </div>`;
-                recGrid.appendChild(card);
-            });
+            if (data.data) {
+                // Bereinigt die API-Vorschläge von Staffel-Spezifikationen für das "Ganze-Anime"-Konzept
+                currentRecommendations = data.data.map(anime => {
+                    let title = anime.title_english || anime.title;
+                    title = title.replace(/s(eason)?\s*\d+/gi, '')
+                                 .replace(/part\s*\d+/gi, '')
+                                 .replace(/cour\s*\d+/gi, '')
+                                 .replace(/[\s-:]+$/, '') 
+                                 .trim();
+                    return {
+                        title: title,
+                        slug: generateSlug(title),
+                        image: anime.images?.jpg?.large_image_url || null,
+                        score: anime.score || 'N/A'
+                    };
+                });
+                renderRecommendations();
+            }
         }).catch(console.error);
+}
+
+// PREMIUM UX: Rendert die Vorschläge und filtert bereits existierende Animes in Echtzeit aus
+function renderRecommendations() {
+    const recGrid = document.getElementById('recommendationsGrid');
+    if (!recGrid) return;
+    recGrid.innerHTML = '';
+
+    // Filtert alle Vorschläge heraus, die sich bereits in deiner Liste befinden
+    const filtered = currentRecommendations.filter(rec => !animeList.some(a => a.slug === rec.slug));
+
+    // Zeigt die Top 4 der verbleibenden, ungesehenen Animes an
+    filtered.slice(0, 4).forEach(rec => {
+        const card = document.createElement('div');
+        card.className = 'anime-card';
+        const posterHtml = rec.image ? `<img class="anime-poster" src="${rec.image}" alt="Poster">` : `<div class="placeholder-poster">📺</div>`;
+        card.innerHTML = `
+            <div class="anime-header-block" style="padding-bottom:5px;">
+                ${posterHtml}
+                <div class="anime-info">
+                    <h3 class="anime-title">${rec.title}</h3>
+                    <div class="anime-meta">Score: ⭐ ${rec.score}</div>
+                </div>
+            </div>
+            <div class="card-actions" style="border-top:none;">
+                <button class="recommendation-btn" onclick="addAnimeFromData('${rec.title.replace(/'/g, "\\'")}', '${rec.slug}', '${rec.image}')">+ Hinzufügen</button>
+            </div>`;
+        recGrid.appendChild(card);
+    });
 }
 
 document.addEventListener('click', e => {
     if (e.target.id !== 'animeName') document.getElementById('autocompleteList').style.display = 'none';
 });
 
-// Wir nutzen jetzt den neuen LocalStorage Schlüssel v3, um alte fehlerhafte Cacheleichen direkt zu umgehen
+// Nutzt den verifizierten LocalStorage v3-Schlüssel
 localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
 renderList();
 loadRecommendations();
