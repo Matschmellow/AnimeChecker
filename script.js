@@ -1,4 +1,4 @@
-let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV2')) || [];
+let animeList = JSON.parse(localStorage.getItem('myAnimeListFullstackV3')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
@@ -189,10 +189,10 @@ function watchEpisodeAuto(animeId, seasonNum, epNum) {
 
     if (epNum === maxBoxen && seasonNum < anime.seasons.length) {
         anime.activeTab = seasonNum + 1;
-        localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+        localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
         switchTab(animeId, seasonNum + 1);
     } else {
-        localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+        localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
         setTimeout(() => renderList(), 300);
     }
 }
@@ -274,7 +274,7 @@ function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
         btnElement.classList.remove('watched');
     }
 
-    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
 
     const curSeason = anime.activeTab || 1;
     const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
@@ -297,13 +297,14 @@ function removeAnime(id) {
     saveAndRender();
 }
 
+// ... Rest der Sortier- und Render-Funktionen bleibt stabil ...
 function changeSort() {
     currentSortCriteria = document.getElementById('sortCriteria').value;
     renderList();
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
     renderList();
     renderRecommendations(); 
 }
@@ -544,6 +545,5 @@ document.addEventListener('click', e => {
     if (e.target.id !== 'animeName') document.getElementById('autocompleteList').style.display = 'none';
 });
 
-localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
 renderList();
 loadRecommendations();
