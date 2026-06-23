@@ -6,18 +6,17 @@ const doneTypingInterval = 500;
 
 const API_BASE = '/api/anime';
 
-// FIX: sonderzeichen → bindestrich statt löschen, damit Re:ZERO → re-zero
+// Generiert einen standardisierten Backup-Slug
 function generateSlug(title) {
     return title.toLowerCase()
         .replace(/\([^)]+\)/g, '')
-        .replace(/[^a-z0-9\s-]/g, '-')
+        .replace(/[^a-z0-9\s-]/g, '')   
         .trim()
         .replace(/\s+/g, '-')
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
 }
 
-// suche via jikan – unverändert wie original
 function showSuggestions() {
     clearTimeout(typingTimer);
     const input = document.getElementById('animeName').value.trim();
@@ -42,16 +41,13 @@ function showSuggestions() {
                         const jpTitle = anime.title;
                         const engTitle = anime.title_english;
                         const displayTitle = engTitle ? `${engTitle} (${jpTitle})` : jpTitle;
-                        const slugTitle = engTitle || jpTitle;
-                        const slug = generateSlug(slugTitle);
-                        // FIX: image direkt aus jikan-response speichern
+                        const name = engTitle || jpTitle;
                         const imageUrl = anime.images?.jpg?.large_image_url || null;
 
                         const item = document.createElement('div');
                         item.className = 'autocomplete-item';
                         item.innerText = displayTitle;
-                        // FIX: imageUrl wird korrekt übergeben
-                        item.onclick = () => selectAnime(engTitle || jpTitle, slug, imageUrl);
+                        item.onclick = () => selectAnime(name, imageUrl, jpTitle);
                         list.appendChild(item);
                     });
                 } else {
@@ -63,28 +59,26 @@ function showSuggestions() {
     }, doneTypingInterval);
 }
 
-function selectAnime(name, slug, image) {
+function selectAnime(name, image, jpTitle) {
     document.getElementById('animeName').value = name;
-    // FIX: image wird in currentSelectedAnime gespeichert
-    currentSelectedAnime = { name, slug, image };
+    currentSelectedAnime = { name, image, jpTitle, slug: null };
     document.getElementById('autocompleteList').style.display = 'none';
 }
 
-function addAnime() {
+async function addAnime() {
     const nameInput = document.getElementById('animeName');
-    if (!currentSelectedAnime && nameInput.value.trim() === '') return;
+    const inputVal = nameInput.value.trim();
+    if (!currentSelectedAnime && inputVal === '') return;
 
-    let animeData = currentSelectedAnime || {
-        name: nameInput.value.trim(),
-        slug: generateSlug(nameInput.value.trim()),
-        image: null
-    };
+    const name = currentSelectedAnime?.name || inputVal;
+    const image = currentSelectedAnime?.image || null;
+    const jpTitle = currentSelectedAnime?.jpTitle || null;
 
     const newAnime = {
         id: Date.now(),
-        name: animeData.name,
-        slug: animeData.slug,
-        image: animeData.image,
+        name,
+        slug: generateSlug(name), 
+        image,
         activeTab: 1,
         isLoading: true,
         isEditing: false,
@@ -98,34 +92,45 @@ function addAnime() {
     currentSelectedAnime = null;
     saveAndRender();
 
-    fetch(`${API_BASE}?slug=${newAnime.slug}`)
-        .then(res => res.json())
-        .then(data => {
-            const anime = animeList.find(a => a.id === newAnime.id);
-            if (!anime) return;
-            anime.isLoading = false;
+    const searchQuery = jpTitle || name;
+    try {
+        const searchResp = await fetch(`${API_BASE}?search=${encodeURIComponent(searchQuery)}`).then(r => r.json());
+        const anime = animeList.find(a => a.id === newAnime.id);
+        if (!anime) return;
 
-            if (data.exists === false) {
-                // api nicht gefunden → jikan-fallback für episodenzahl
-                fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.name)}&limit=1`)
-                    .then(r => r.json())
-                    .then(jData => {
-                        if (jData.data && jData.data.length > 0) {
-                            const entry = jData.data[0];
-                            anime.seasons = [{ number: 1, episodes: entry.episodes || 12, isVerified: true, isFilm: false }];
-                        }
-                        anime.hasWarning = true;
-                        saveAndRender();
-                    }).catch(() => { anime.hasWarning = true; saveAndRender(); });
-            } else {
-                anime.seasons = data.seasons;
-                if (data.fallback) anime.hasWarning = true;
-                saveAndRender();
-            }
-        }).catch(() => {
-            const anime = animeList.find(a => a.id === newAnime.id);
-            if (anime) { anime.isLoading = false; anime.hasWarning = true; saveAndRender(); }
-        });
+        let resolvedSlug = null;
+
+        if (searchResp.results && searchResp.results.length > 0) {
+            const generated = generateSlug(name);
+            resolvedSlug = searchResp.results.reduce((best, candidate) => {
+                return similarity(candidate, generated) > similarity(best, generated) ? candidate : best;
+            }, searchResp.results[0]);
+            anime.slug = resolvedSlug;
+        }
+
+        const slug = resolvedSlug || anime.slug;
+        const dataResp = await fetch(`${API_BASE}?slug=${slug}`).then(r => r.json());
+
+        anime.isLoading = false;
+        if (dataResp.exists) {
+            anime.seasons = dataResp.seasons;
+            if (dataResp.fallback) anime.hasWarning = true;
+        } else {
+            anime.hasWarning = true;
+        }
+        saveAndRender();
+
+    } catch (e) {
+        const anime = animeList.find(a => a.id === newAnime.id);
+        if (anime) { anime.isLoading = false; anime.hasWarning = true; saveAndRender(); }
+    }
+}
+
+function similarity(a, b) {
+    const setA = new Set(a.split(''));
+    const setB = new Set(b.split(''));
+    const intersection = [...setA].filter(c => setB.has(c)).length;
+    return intersection / Math.max(setA.size, setB.size);
 }
 
 function addAnimeFromData(name, slug, image) {
@@ -133,7 +138,9 @@ function addAnimeFromData(name, slug, image) {
         alert("Diesen Anime hast du bereits auf deiner Liste!");
         return;
     }
-    currentSelectedAnime = { name, slug, image };
+    currentSelectedAnime = { name, image, jpTitle: null, slug };
+    const nameInput = document.getElementById('animeName');
+    nameInput.value = name;
     addAnime();
 }
 
@@ -153,9 +160,8 @@ function watchEpisodeAuto(animeId, seasonNum, epNum) {
 
     const seasonData = anime.seasons.find(s => s.number === seasonNum);
     const maxBoxen = seasonData ? seasonData.episodes : 12;
-    const totalAvailableSeasons = anime.seasons ? anime.seasons.length : 1;
 
-    if (epNum === maxBoxen && seasonNum < totalAvailableSeasons) {
+    if (epNum === maxBoxen && seasonNum < anime.seasons.length) {
         anime.activeTab = seasonNum + 1;
     }
     localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
@@ -180,7 +186,7 @@ function resyncAnime(id) {
     renderList();
 
     fetch(`${API_BASE}?slug=${anime.slug}`)
-        .then(res => res.json())
+        .then(r => r.json())
         .then(data => {
             anime.isLoading = false;
             if (data.exists === false) {
@@ -210,7 +216,6 @@ function saveManualEps(id, seasonNum) {
     saveAndRender();
 }
 
-// manuell film-tab oder staffel hinzufügen
 function addManualSeason(id, isFilm) {
     const anime = animeList.find(a => a.id === id);
     if (!anime) return;
@@ -230,20 +235,17 @@ function toggleSeasonFilm(id, seasonNum) {
     const anime = animeList.find(a => a.id === id);
     if (!anime) return;
     const s = anime.seasons.find(s => s.number === seasonNum);
-    if (s) {
-        s.isFilm = !s.isFilm;
-        s.displayName = s.isFilm ? 'Filme' : undefined;
-    }
+    if (s) { s.isFilm = !s.isFilm; s.displayName = s.isFilm ? 'Filme' : undefined; }
     saveAndRender();
 }
 
+// PREMIUM UX: Direktes DOM-Toggling verhindert unruhiges Springen der Boxen
 function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
 
     const epKey = `s${seasonNum}e${epNum}`;
     const index = anime.watchedEpisodes.indexOf(epKey);
-
     if (index === -1) {
         anime.watchedEpisodes.push(epKey);
         btnElement.classList.add('watched');
@@ -257,9 +259,18 @@ function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
     const curSeason = anime.activeTab || 1;
     const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
     const geschaut = anime.watchedEpisodes.filter(k => k.startsWith(`s${curSeason}e`)).length;
+    
+    // Passt die Metadaten live an
     const meta = btnElement.closest('.anime-card')?.querySelector('.anime-meta');
     if (meta && !anime.isLoading) {
-        meta.innerText = `Gesehen: ${geschaut} / ${seasonData.episodes} Folgen`;
+        meta.innerText = `Gesehen: ${geschaut} / ${seasonData.episodes} ${seasonData.isFilm ? 'Filme' : 'Folgen'}`;
+    }
+
+    // Passt die Progressbar live an
+    const progressBarFill = btnElement.closest('.anime-card')?.querySelector('.progress-bar-fill');
+    if (progressBarFill && seasonData.episodes > 0) {
+        const neueProzent = Math.min(100, Math.round((geschaut / seasonData.episodes) * 100));
+        progressBarFill.style.width = `${neueProzent}%`;
     }
 }
 
@@ -282,21 +293,20 @@ function renderList() {
     const grid = document.getElementById('animeGrid');
 
     const scrollPositions = {};
-    animeList.forEach(anime => {
-        const container = document.getElementById(`epScroll_${anime.id}`);
-        if (container) scrollPositions[anime.id] = container.scrollTop;
+    animeList.forEach(a => {
+        const c = document.getElementById(`epScroll_${a.id}`);
+        if (c) scrollPositions[a.id] = c.scrollTop;
     });
 
     grid.innerHTML = '';
 
-    let sortedList = [...animeList];
-    if (currentSortCriteria === 'name_asc') sortedList.sort((a, b) => a.name.localeCompare(b.name));
-    else if (currentSortCriteria === 'progress_desc') sortedList.sort((a, b) => b.watchedEpisodes.length - a.watchedEpisodes.length);
-    else sortedList.sort((a, b) => b.id - a.id);
+    let sorted = [...animeList];
+    if (currentSortCriteria === 'name_asc') sorted.sort((a, b) => a.name.localeCompare(b.name));
+    else if (currentSortCriteria === 'progress_desc') sorted.sort((a, b) => b.watchedEpisodes.length - a.watchedEpisodes.length);
+    else sorted.sort((a, b) => b.id - a.id);
+    sorted.sort((a, b) => (isAnimeCompletelyFinished(a) ? 1 : 0) - (isAnimeCompletelyFinished(b) ? 1 : 0));
 
-    sortedList.sort((a, b) => (isAnimeCompletelyFinished(a) ? 1 : 0) - (isAnimeCompletelyFinished(b) ? 1 : 0));
-
-    sortedList.forEach(anime => {
+    sorted.forEach(anime => {
         const curSeason = anime.activeTab || 1;
         const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
         const maxBoxen = seasonData.episodes;
@@ -307,11 +317,10 @@ function renderList() {
         if (nächsteFolge > maxBoxen) nächsteFolge = maxBoxen;
 
         const isAllFinished = isAnimeCompletelyFinished(anime);
-        const geschauteInStaffel = anime.watchedEpisodes.filter(k => k.startsWith(`s${curSeason}e`)).length;
-        const prozent = Math.min(100, Math.round((geschauteInStaffel / maxBoxen) * 100));
-        const curSeasonFinished = geschauteInStaffel >= maxBoxen;
+        const geschaut = anime.watchedEpisodes.filter(k => k.startsWith(`s${curSeason}e`)).length;
+        const prozent = Math.min(100, Math.round((geschaut / maxBoxen) * 100));
+        const curSeasonFinished = geschaut >= maxBoxen;
 
-        // FIX: film-tab nutzt "film" als pfad, staffeln "staffel-N"
         const pathSegment = isFilmType ? 'film' : `staffel-${curSeason}`;
         const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/${pathSegment}/episode-${nächsteFolge}`;
         const searchUrl = `https://aniworld.to/support/suche?q=${encodeURIComponent(anime.name)}`;
@@ -324,20 +333,18 @@ function renderList() {
             card.style.borderColor = 'var(--success)';
         }
 
-        // FIX: poster aus gespeichertem image-url laden
         const posterHtml = anime.image
             ? `<img class="anime-poster" src="${anime.image}" alt="Poster" onerror="this.outerHTML='<div class=\\'placeholder-poster\\'>📺</div>'">`
             : `<div class="placeholder-poster">📺</div>`;
 
-        // FIX: displayName für film-tabs korrekt anzeigen
         const tabsHtml = anime.seasons.map(s => {
-            const isActive = s.number === curSeason ? 'active' : '';
+            const active = s.number === curSeason ? 'active' : '';
             const tabName = s.displayName || (s.isFilm ? '🎬 Filme' : `St. ${s.number}`);
-            return `<button class="tab-btn ${isActive}" onclick="switchTab(${anime.id}, ${s.number})">${tabName}</button>`;
+            return `<button class="tab-btn ${active}" onclick="switchTab(${anime.id}, ${s.number})">${tabName}</button>`;
         }).join('');
 
         const warningHtml = anime.hasWarning
-            ? `<div style="color:#ffaa00;font-size:11px;margin-top:4px;font-weight:bold;">⚠️ Link unbestätigt</div>`
+            ? `<div style="color:#ffaa00;font-size:11px;margin-top:4px;font-weight:bold;">⚠️ Link unbestätigt – Slug manuell prüfen</div>`
             : '';
 
         let statusMetaHtml;
@@ -346,7 +353,7 @@ function renderList() {
         } else if (curSeasonFinished) {
             statusMetaHtml = `<div style="color:var(--success);font-weight:800;font-size:12px;margin-top:4px;">🎉 ${isFilmType ? 'ALLE FILME' : `STAFFEL ${curSeason}`} BEENDET!</div>`;
         } else {
-            statusMetaHtml = `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschauteInStaffel} / ${maxBoxen} ${isFilmType ? 'Filme' : 'Folgen'}`}</div>`;
+            statusMetaHtml = `<div class="anime-meta">${anime.isLoading ? 'Lädt...' : `Gesehen: ${geschaut} / ${maxBoxen} ${isFilmType ? 'Filme' : 'Folgen'}`}</div>`;
         }
 
         let contentAreaHtml;
@@ -379,7 +386,7 @@ function renderList() {
                     <button onclick="toggleEdit(${anime.id})" style="width:100%;padding:10px;background:transparent;color:var(--text-muted);border:1px solid var(--border-color);border-radius:8px;cursor:pointer;font-weight:bold;">Schließen</button>
                 </div>`;
         } else if (anime.isLoading) {
-            contentAreaHtml = '<div style="text-align:center;color:var(--accent);font-size:13px;padding:30px 0;font-weight:600;">🔄 Synchronisiere...</div>';
+            contentAreaHtml = '<div style="text-align:center;color:var(--accent);font-size:13px;padding:30px 0;font-weight:600;">🔄 Synchronisiere mit AniWorld...</div>';
         } else {
             const epBadges = Array.from({ length: maxBoxen }, (_, i) => {
                 const n = i + 1;
@@ -433,14 +440,14 @@ function renderList() {
         grid.appendChild(card);
     });
 
-    animeList.forEach(anime => {
-        const container = document.getElementById(`epScroll_${anime.id}`);
-        if (container && scrollPositions[anime.id]) container.scrollTop = scrollPositions[anime.id];
+    animeList.forEach(a => {
+        const c = document.getElementById(`epScroll_${a.id}`);
+        if (c && scrollPositions[a.id]) c.scrollTop = scrollPositions[a.id];
     });
 }
 
 function isAnimeCompletelyFinished(anime) {
-    if (anime.isLoading || !anime.seasons || anime.seasons.length === 0) return false;
+    if (anime.isLoading || !anime.seasons?.length) return false;
     const total = anime.seasons.reduce((sum, s) => sum + s.episodes, 0);
     return total > 0 && anime.watchedEpisodes.length >= total;
 }
@@ -448,7 +455,7 @@ function isAnimeCompletelyFinished(anime) {
 function loadRecommendations() {
     const recGrid = document.getElementById('recommendationsGrid');
     fetch('https://api.jikan.moe/v4/top/anime?limit=4')
-        .then(res => res.json())
+        .then(r => r.json())
         .then(data => {
             recGrid.innerHTML = '';
             data.data?.forEach(anime => {
