@@ -7,7 +7,6 @@ let currentRecommendations = [];
 
 const API_BASE = '/api/anime';
 
-// Generiert einen standardisierten Backup-Slug
 function generateSlug(title) {
     return title.toLowerCase()
         .replace(/\([^)]+\)/g, '')
@@ -84,7 +83,7 @@ async function addAnime() {
         isLoading: true,
         isEditing: false,
         hasWarning: false,
-        seasons: [{ number: 1, episodes: 0, isVerified: false, isFilm: false }],
+        seasons: [{ number: 1, episodes: 12, isVerified: true, isFilm: false }],
         watchedEpisodes: []
     };
 
@@ -106,52 +105,22 @@ async function addAnime() {
             }, searchResp.results[0]);
         }
 
-        const dataResp = await fetch(`${API_BASE}?slug=${anime.slug}`).then(r => r.json());
+        // Übermittelt den klaren Namen an das Backend für das unfehlbare API-Driven-Modell
+        const dataResp = await fetch(`${API_BASE}?slug=${anime.slug}&title=${encodeURIComponent(name)}`).then(r => r.json());
 
+        anime.isLoading = false;
         if (dataResp.exists) {
             anime.seasons = dataResp.seasons;
             if (dataResp.fallback) anime.hasWarning = true;
-            loadEpisodesOnDemand(anime.id, 1);
         } else {
-            anime.isLoading = false;
             anime.hasWarning = true;
-            anime.seasons = [{ number: 1, episodes: 12, isVerified: true, isFilm: false }];
-            saveAndRender();
         }
+        saveAndRender();
 
     } catch (e) {
         const anime = animeList.find(a => a.id === newAnime.id);
         if (anime) { anime.isLoading = false; anime.hasWarning = true; saveAndRender(); }
     }
-}
-
-async function loadEpisodesOnDemand(animeId, seasonNumber) {
-    const anime = animeList.find(a => a.id === animeId);
-    if (!anime) return;
-
-    const seasonData = anime.seasons.find(s => s.number === seasonNumber);
-    if (!seasonData || seasonData.isVerified) {
-        anime.isLoading = false;
-        saveAndRender();
-        return;
-    }
-
-    anime.isLoading = true;
-    renderList();
-
-    const pathSegment = seasonData.isFilm ? 'film' : `staffel-${seasonNumber}`;
-    
-    try {
-        const res = await fetch(`${API_BASE}?slug=${anime.slug}&getEpisodesFor=${pathSegment}`).then(r => r.json());
-        seasonData.episodes = res.episodes !== undefined ? res.episodes : 12;
-        seasonData.isVerified = true;
-    } catch (e) {
-        seasonData.episodes = 12;
-        seasonData.isVerified = true;
-    }
-
-    anime.isLoading = false;
-    saveAndRender();
 }
 
 function similarity(a, b) {
@@ -174,7 +143,7 @@ function switchTab(animeId, seasonNumber) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
     anime.activeTab = seasonNumber;
-    loadEpisodesOnDemand(animeId, seasonNumber);
+    saveAndRender();
 }
 
 function watchEpisodeAuto(animeId, seasonNum, epNum) {
@@ -214,18 +183,17 @@ function resyncAnime(id) {
     anime.hasWarning = false;
     renderList();
 
-    fetch(`${API_BASE}?slug=${anime.slug}`)
+    fetch(`${API_BASE}?slug=${anime.slug}&title=${encodeURIComponent(anime.name)}`)
         .then(r => r.json())
         .then(data => {
+            anime.isLoading = false;
             if (data.exists === false) {
-                anime.isLoading = false;
                 anime.hasWarning = true;
-                saveAndRender();
             } else {
                 anime.seasons = data.seasons;
                 anime.activeTab = 1;
-                loadEpisodesOnDemand(id, 1);
             }
+            saveAndRender();
         }).catch(() => {
             anime.isLoading = false;
             anime.hasWarning = true;
@@ -260,6 +228,7 @@ function addManualSeason(id, isFilm) {
     saveAndRender();
 }
 
+// PREMIUM UX: Direktes DOM-Toggling unterbindet unruhiges Springen auf dem iPad komplett
 function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
     const anime = animeList.find(a => a.id === animeId);
     if (!anime) return;
@@ -297,7 +266,6 @@ function removeAnime(id) {
     saveAndRender();
 }
 
-// ... Rest der Sortier- und Render-Funktionen bleibt stabil ...
 function changeSort() {
     currentSortCriteria = document.getElementById('sortCriteria').value;
     renderList();
@@ -402,8 +370,6 @@ function renderList() {
                 </div>`;
         } else if (anime.isLoading) {
             contentAreaHtml = '<div style="text-align:center;color:var(--accent);font-size:13px;padding:30px 0;font-weight:600;">🔄 Synchronisiere mit AniWorld...</div>';
-        } else if (!seasonData.isVerified && maxBoxen === 0) {
-            contentAreaHtml = '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:30px 0;font-weight:600;">🎬 Klicke auf den Tab, um Filme zu laden...</div>';
         } else {
             const epBadges = Array.from({ length: maxBoxen }, (_, i) => {
                 const n = i + 1;
