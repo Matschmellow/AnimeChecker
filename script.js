@@ -3,7 +3,7 @@ let currentSelectedAnime = null;
 let currentSortCriteria = 'date_desc';
 let typingTimer;
 const doneTypingInterval = 500;
-let currentRecommendations = []; // Speichert die geladenen Top-Animes global
+let currentRecommendations = []; // Speichert die bereinigten Vorschläge global
 
 const API_BASE = '/api/anime';
 
@@ -189,10 +189,10 @@ function watchEpisodeAuto(animeId, seasonNum, epNum) {
 
     if (epNum === maxBoxen && seasonNum < anime.seasons.length) {
         anime.activeTab = seasonNum + 1;
-        localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
+        localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
         switchTab(animeId, seasonNum + 1);
     } else {
-        localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
+        localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
         setTimeout(() => renderList(), 300);
     }
 }
@@ -233,8 +233,9 @@ function resyncAnime(id) {
         });
 }
 
+// Fix: "animeList" shadow variable Fehler behoben
 function saveManualEps(id, seasonNum) {
-    const animeList = animeList.find(a => a.id === id);
+    const anime = animeList.find(a => a.id === id);
     if (!anime) return;
     let eps = parseInt(document.getElementById(`editEps_${id}_${seasonNum}`).value);
     if (isNaN(eps) || eps < 1) eps = 1;
@@ -274,7 +275,7 @@ function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
         btnElement.classList.remove('watched');
     }
 
-    localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
 
     const curSeason = anime.activeTab || 1;
     const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
@@ -303,9 +304,9 @@ function changeSort() {
 }
 
 function saveAndRender() {
-    localStorage.setItem('myAnimeListFullstackV3', JSON.stringify(animeList));
+    localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
     renderList();
-    renderRecommendations(); // Rendert die Vorschläge direkt neu, um hinzugefügte Elemente auszublenden
+    renderRecommendations(); 
 }
 
 function renderList() {
@@ -465,19 +466,31 @@ function isAnimeCompletelyFinished(anime) {
 }
 
 function loadRecommendations() {
-    // Erhöht das Limit beim API-Fetch leicht, um genug Nachrücker zu haben, wenn Elemente ausgeblendet werden
-    fetch('https://api.jikan.moe/v4/top/anime?limit=10')
+    fetch('https://api.jikan.moe/v4/top/anime?limit=12')
         .then(r => r.json())
         .then(data => {
             if (data.data) {
-                // Bereinigt die API-Vorschläge von Staffel-Spezifikationen für das "Ganze-Anime"-Konzept
-                currentRecommendations = data.data.map(anime => {
+                // PREMIUM UX: Radikale Zusammenführung von Spin-offs & Sub-Staffeln zu Hauptfranchises
+                const processed = data.data.map(anime => {
                     let title = anime.title_english || anime.title;
-                    title = title.replace(/s(eason)?\s*\d+/gi, '')
-                                 .replace(/part\s*\d+/gi, '')
-                                 .replace(/cour\s*\d+/gi, '')
-                                 .replace(/[\s-:]+$/, '') 
-                                 .trim();
+                    const lowerTitle = title.toLowerCase();
+                    
+                    if (lowerTitle.includes("jojo")) {
+                        title = "JoJo's Bizarre Adventure";
+                    } else if (lowerTitle.includes("re:zero") || lowerTitle.includes("re-zero")) {
+                        title = "Re:ZERO Starting Life in Another World";
+                    } else if (lowerTitle.includes("demon slayer")) {
+                        title = "Demon Slayer Kimetsu no Yaiba";
+                    } else if (lowerTitle.includes("attack on titan")) {
+                        title = "Attack on Titan";
+                    } else {
+                        title = title.replace(/s(eason)?\s*\d+/gi, '')
+                                     .replace(/part\s*\d+/gi, '')
+                                     .replace(/cour\s*\d+/gi, '')
+                                     .split(":")[0] // Entfernt Episodenuntertitel nach Doppelpunkten
+                                     .trim();
+                    }
+                    
                     return {
                         title: title,
                         slug: generateSlug(title),
@@ -485,21 +498,31 @@ function loadRecommendations() {
                         score: anime.score || 'N/A'
                     };
                 });
+
+                // Filtert doppelte Franchises innerhalb der Vorschlagsliste heraus
+                const uniqueRecs = [];
+                const seenSlugs = new Set();
+                processed.forEach(item => {
+                    if (!seenSlugs.has(item.slug)) {
+                        seenSlugs.add(item.slug);
+                        uniqueRecs.push(item);
+                    }
+                });
+
+                currentRecommendations = uniqueRecs;
                 renderRecommendations();
             }
         }).catch(console.error);
 }
 
-// PREMIUM UX: Rendert die Vorschläge und filtert bereits existierende Animes in Echtzeit aus
 function renderRecommendations() {
     const recGrid = document.getElementById('recommendationsGrid');
     if (!recGrid) return;
     recGrid.innerHTML = '';
 
-    // Filtert alle Vorschläge heraus, die sich bereits in deiner Liste befinden
+    // Filtert Vorschläge heraus, die sich bereits in der aktiven Userliste befinden
     const filtered = currentRecommendations.filter(rec => !animeList.some(a => a.slug === rec.slug));
 
-    // Zeigt die Top 4 der verbleibenden, ungesehenen Animes an
     filtered.slice(0, 4).forEach(rec => {
         const card = document.createElement('div');
         card.className = 'anime-card';
@@ -523,7 +546,6 @@ document.addEventListener('click', e => {
     if (e.target.id !== 'animeName') document.getElementById('autocompleteList').style.display = 'none';
 });
 
-// Nutzt den verifizierten LocalStorage v3-Schlüssel
 localStorage.setItem('myAnimeListFullstackV2', JSON.stringify(animeList));
 renderList();
 loadRecommendations();
