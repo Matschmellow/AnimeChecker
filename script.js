@@ -225,7 +225,7 @@ function addManualSeason(id, isFilm) {
         episodes: isFilm ? 1 : 12,
         isVerified: false,
         isFilm,
-        displayName: isFilm ? 'Filme' : undefined
+        displayName: isFilm ? '🎬 Filme' : undefined
     });
     anime.activeTab = nextNum;
     saveAndRender();
@@ -235,7 +235,7 @@ function toggleSeasonFilm(id, seasonNum) {
     const anime = animeList.find(a => a.id === id);
     if (!anime) return;
     const s = anime.seasons.find(s => s.number === seasonNum);
-    if (s) { s.isFilm = !s.isFilm; s.displayName = s.isFilm ? 'Filme' : undefined; }
+    if (s) { s.isFilm = !s.isFilm; s.displayName = s.isFilm ? '🎬 Filme' : undefined; }
     saveAndRender();
 }
 
@@ -339,7 +339,7 @@ function renderList() {
 
         const tabsHtml = anime.seasons.map(s => {
             const active = s.number === curSeason ? 'active' : '';
-            const tabName = s.displayName || (s.isFilm ? '🎬 Filme' : `St. ${s.number}`);
+            const tabName = s.displayName || `St. ${s.number}`;
             return `<button class="tab-btn ${active}" onclick="switchTab(${anime.id}, ${s.number})">${tabName}</button>`;
         }).join('');
 
