@@ -18,14 +18,23 @@ async function fetchEpisodeCountForPath(slug, subPath) {
 
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || '';
-            if (href.includes(`/stream/${slug}/${subPath}/episode-`)) {
+            if (href.includes(`/${subPath}/episode-`)) {
                 const match = href.match(/\/episode-(\d+)/);
                 if (match) episodes.add(parseInt(match[1]));
             }
         });
-        return episodes.size > 0 ? Math.max(...episodes) : 12;
+
+        if (episodes.size > 0) {
+            return Math.max(...episodes);
+        }
+
+        // ✨ DER ULTIMATIVE MOVIE-FIX:
+        // Wenn die Seite existiert, aber keine nummerierten Klick-Boxen hat,
+        // handelt es sich um einen einzelnen Film. Anzahl ist also exakt 1!
+        return subPath === 'film' ? 1 : 12;
     } catch (e) {
-        return 12; // Sicherer Fallback
+        // Wenn der Film-Tab einen 404-Fehler wirft, gibt es wirklich keine Filme
+        return subPath === 'film' ? 0 : 12;
     }
 }
 
@@ -35,7 +44,7 @@ module.exports = async (req, res) => {
 
     const { slug, search, getEpisodesFor } = req.query;
 
-    // 1. AJAX-Suche (Bleibt unverändert und genial)
+    // 1. AJAX-Suche
     if (search) {
         try {
             const url = `https://aniworld.to/ajax/search`;
@@ -58,13 +67,13 @@ module.exports = async (req, res) => {
 
     if (!slug) return res.status(200).json({ exists: false, error: 'Kein Slug' });
 
-    // 2. LAZY LOADING: Holt die Folgen NUR für den angeforderten Tab (z.B. ?slug=re-zero&getEpisodesFor=staffel-2)
+    // 2. LAZY LOADING auf Abruf
     if (getEpisodesFor) {
         const count = await fetchEpisodeCountForPath(slug, getEpisodesFor);
         return res.status(200).json({ episodes: count });
     }
 
-    // 3. HAUPT-SCAN (Nur beim Hinzufügen): Findet nur heraus, WIE VIELE Tabs wir brauchen
+    // 3. HAUPT-SCAN (Struktur-Ermittlung)
     try {
         const url = `https://aniworld.to/anime/stream/${slug}`;
         const { data } = await axios.get(url, { headers: HEADERS, timeout: 5000 });
@@ -75,11 +84,15 @@ module.exports = async (req, res) => {
 
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || '';
+            const text = $(el).text().trim().toLowerCase();
+            
             if (href.includes(`/stream/${slug}/staffel-`)) {
                 const mSeason = href.match(/\/staffel-(\d+)/);
                 if (mSeason) seasonNums.add(parseInt(mSeason[1]));
             }
-            if (href.includes(`/stream/${slug}/film`)) {
+            
+            // Extrem tolerante Erkennung des Filme-Reiters
+            if (href.endsWith('/film') || href.includes(`/${slug}/film`) || text === 'filme' || text === 'film') {
                 hasFilms = true;
             }
         });
@@ -87,7 +100,6 @@ module.exports = async (req, res) => {
         const totalSeasons = seasonNums.size > 0 ? Math.max(...seasonNums) : 1;
         const seasonsConfig = [];
 
-        // Wir bauen leere Hüllen. Die Folgenanzahl steht standardmäßig auf 0 (wird sofort nachgeladen)
         for (let i = 1; i <= totalSeasons; i++) {
             seasonsConfig.push({ number: i, episodes: 0, isVerified: false, isFilm: false });
         }
@@ -113,4 +125,3 @@ module.exports = async (req, res) => {
         });
     }
 };
-
