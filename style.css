@@ -286,9 +286,6 @@ button {
     transition: width 0.4s ease;
 }
 
-/* ==============================================================================
-   EPISODEN & FILME GRID-SYSTEM (Perfekte Quadrate)
-   ============================================================================== */
 .episode-box-title {
     font-size: 11px;
     text-transform: uppercase;
@@ -316,14 +313,12 @@ button {
     border-radius: 10px;
 }
 
-/* Zwingt das Grid IMMER in 6 exakt gleich große Spalten */
 .episode-grid {
-    display: grid !important;
-    grid-template-columns: repeat(6, 1fr) !important;
-    gap: 8px !important;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
 }
 
-/* Das Design für Filme UND Folgen - zwingt sie zu perfekten Quadraten */
 .episode-badge {
     background-color: var(--bg-input);
     color: var(--text-main);
@@ -338,7 +333,7 @@ button {
     align-items: center;
     justify-content: center;
     width: 100%;
-    aspect-ratio: 1 / 1; /* Macht den Button zu einem perfekten Quadrat */
+    aspect-ratio: 1 / 1;
     transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
