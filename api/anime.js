@@ -14,7 +14,6 @@ async function fetchEpisodeCount(slug, seasonNum) {
         const { data } = await axios.get(url, { headers: HEADERS, timeout: 5000 });
         const $ = cheerio.load(data);
         let maxCount = 0;
-
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || '';
             const match = href.match(new RegExp(`/${slug}/staffel-${seasonNum}/episode-(\\d+)`));
@@ -23,7 +22,6 @@ async function fetchEpisodeCount(slug, seasonNum) {
                 if (num > maxCount) maxCount = num;
             }
         });
-
         return maxCount > 0 ? maxCount : 12;
     } catch (e) {
         return 12;
@@ -36,7 +34,6 @@ async function fetchFilmCount(slug) {
         const { data } = await axios.get(url, { headers: HEADERS, timeout: 5000 });
         const $ = cheerio.load(data);
         let maxCount = 0;
-
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || '';
             const match = href.match(new RegExp(`/${slug}/filme/film-(\\d+)`));
@@ -45,10 +42,9 @@ async function fetchFilmCount(slug) {
                 if (num > maxCount) maxCount = num;
             }
         });
-
-        return maxCount > 0 ? maxCount : 0;
+        return maxCount > 0 ? maxCount : 1;
     } catch (e) {
-        return 0;
+        return 1;
     }
 }
 
@@ -85,17 +81,13 @@ module.exports = async (req, res) => {
 
     if (!slug) return res.status(200).json({ exists: false, error: 'Kein Slug' });
 
+    // Episode count for a regular season
     if (getEpisodesForSeason) {
-        const seasonNum = parseInt(getEpisodesForSeason);
-        // Season 0 means films
-        if (seasonNum === 0) {
-            const count = await fetchFilmCount(slug);
-            return res.status(200).json({ episodes: count });
-        }
-        const count = await fetchEpisodeCount(slug, seasonNum);
+        const count = await fetchEpisodeCount(slug, parseInt(getEpisodesForSeason));
         return res.status(200).json({ episodes: count });
     }
 
+    // Main slug lookup – fetch overview page
     try {
         const url = `https://aniworld.to/anime/stream/${slug}`;
         const { data } = await axios.get(url, { headers: HEADERS, timeout: 5000 });
@@ -106,17 +98,13 @@ module.exports = async (req, res) => {
 
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || '';
-
-            // Detect regular seasons - only staffel-1 and above
             if (href.includes(`/stream/${slug}/staffel-`)) {
-                const mSeason = href.match(/\/staffel-(\d+)/);
-                if (mSeason) {
-                    const num = parseInt(mSeason[1]);
-                    if (num >= 1) seasonNums.add(num); // skip staffel-0
+                const m = href.match(/\/staffel-(\d+)/);
+                if (m) {
+                    const num = parseInt(m[1]);
+                    if (num >= 1) seasonNums.add(num); // ignore staffel-0
                 }
             }
-
-            // Detect films via /filme/ path
             if (href.includes(`/stream/${slug}/filme`)) {
                 hasFilms = true;
             }
@@ -125,18 +113,20 @@ module.exports = async (req, res) => {
         const totalSeasons = seasonNums.size > 0 ? Math.max(...seasonNums) : 1;
         const seasonsConfig = [];
 
-        // Add film tab first if films exist
+        // Films: fetch count immediately so frontend needs no second call
         if (hasFilms) {
+            const filmCount = await fetchFilmCount(slug);
             seasonsConfig.push({
                 number: seasonsConfig.length + 1,
-                episodes: 0,
-                isVerified: false,
+                episodes: filmCount,
+                isVerified: true,   // already done, no lazy-load needed
                 isFilm: true,
-                displayName: '🎬 Filme'
+                displayName: '🎬 Filme',
+                aniWorldSeason: null
             });
         }
 
-        // Add regular seasons
+        // Regular seasons – episodes loaded lazily by frontend
         for (let i = 1; i <= totalSeasons; i++) {
             seasonsConfig.push({
                 number: seasonsConfig.length + 1,
@@ -144,7 +134,7 @@ module.exports = async (req, res) => {
                 isVerified: false,
                 isFilm: false,
                 displayName: `St. ${i}`,
-                aniWorldSeason: i  // store actual aniworld season number for URL building
+                aniWorldSeason: i
             });
         }
 
