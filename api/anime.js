@@ -30,7 +30,6 @@ async function fetchEpisodeCount(slug, seasonNum) {
     }
 }
 
-// Filme zählen über /filme/ Pfad
 async function fetchFilmCount(slug) {
     try {
         const url = `https://aniworld.to/anime/stream/${slug}/filme`;
@@ -40,7 +39,6 @@ async function fetchFilmCount(slug) {
 
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || '';
-            // Matcht z.B. /hunter-x-hunter/filme/film-3
             const match = href.match(new RegExp(`/${slug}/filme/film-(\\d+)`));
             if (match) {
                 const num = parseInt(match[1]);
@@ -48,10 +46,8 @@ async function fetchFilmCount(slug) {
             }
         });
 
-        // Seite existiert, aber keine film-N Links gefunden → trotzdem mind. 1 Film
-        return maxCount > 0 ? maxCount : 1;
+        return maxCount > 0 ? maxCount : 0;
     } catch (e) {
-        // 404 oder Timeout → keine Filme vorhanden
         return 0;
     }
 }
@@ -80,7 +76,7 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET');
 
-    const { slug, search, getEpisodesForSeason, getFilmCount } = req.query;
+    const { slug, search, getEpisodesForSeason } = req.query;
 
     if (search) {
         const results = await searchAniworld(search);
@@ -89,14 +85,14 @@ module.exports = async (req, res) => {
 
     if (!slug) return res.status(200).json({ exists: false, error: 'Kein Slug' });
 
-    // Dedizierter Endpunkt für Filmanzahl
-    if (getFilmCount !== undefined) {
-        const count = await fetchFilmCount(slug);
-        return res.status(200).json({ films: count });
-    }
-
     if (getEpisodesForSeason) {
-        const count = await fetchEpisodeCount(slug, getEpisodesForSeason);
+        const seasonNum = parseInt(getEpisodesForSeason);
+        // Season 0 means films
+        if (seasonNum === 0) {
+            const count = await fetchFilmCount(slug);
+            return res.status(200).json({ episodes: count });
+        }
+        const count = await fetchEpisodeCount(slug, seasonNum);
         return res.status(200).json({ episodes: count });
     }
 
@@ -111,14 +107,17 @@ module.exports = async (req, res) => {
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || '';
 
-            // Reguläre Staffeln
+            // Detect regular seasons - only staffel-1 and above
             if (href.includes(`/stream/${slug}/staffel-`)) {
                 const mSeason = href.match(/\/staffel-(\d+)/);
-                if (mSeason) seasonNums.add(parseInt(mSeason[1]));
+                if (mSeason) {
+                    const num = parseInt(mSeason[1]);
+                    if (num >= 1) seasonNums.add(num); // skip staffel-0
+                }
             }
 
-            // Filme – matcht /slug/filme oder /slug/filme/film-N
-            if (href.includes(`/${slug}/filme`)) {
+            // Detect films via /filme/ path
+            if (href.includes(`/stream/${slug}/filme`)) {
                 hasFilms = true;
             }
         });
@@ -126,13 +125,27 @@ module.exports = async (req, res) => {
         const totalSeasons = seasonNums.size > 0 ? Math.max(...seasonNums) : 1;
         const seasonsConfig = [];
 
-        // Filme als erster Eintrag, falls vorhanden
+        // Add film tab first if films exist
         if (hasFilms) {
-            seasonsConfig.push({ number: 0, episodes: 0, isVerified: false, isFilm: true });
+            seasonsConfig.push({
+                number: seasonsConfig.length + 1,
+                episodes: 0,
+                isVerified: false,
+                isFilm: true,
+                displayName: '🎬 Filme'
+            });
         }
 
+        // Add regular seasons
         for (let i = 1; i <= totalSeasons; i++) {
-            seasonsConfig.push({ number: i, episodes: 0, isVerified: false });
+            seasonsConfig.push({
+                number: seasonsConfig.length + 1,
+                episodes: 0,
+                isVerified: false,
+                isFilm: false,
+                displayName: `St. ${i}`,
+                aniWorldSeason: i  // store actual aniworld season number for URL building
+            });
         }
 
         return res.status(200).json({ exists: true, slug, seasons: seasonsConfig });
@@ -141,7 +154,7 @@ module.exports = async (req, res) => {
         if (error.response?.status === 404) return res.status(200).json({ exists: false, slug });
         return res.status(200).json({
             exists: true, slug,
-            seasons: [{ number: 1, episodes: 12, isVerified: false }],
+            seasons: [{ number: 1, episodes: 12, isVerified: false, isFilm: false, displayName: 'St. 1', aniWorldSeason: 1 }],
             fallback: true
         });
     }
