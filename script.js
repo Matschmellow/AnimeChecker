@@ -336,8 +336,9 @@ function renderList() {
         const prozent = maxBoxen > 0 ? Math.min(100, Math.round((geschaut / maxBoxen) * 100)) : 0;
         const curSeasonFinished = maxBoxen > 0 && geschaut >= maxBoxen;
 
-        const pathSegment = isFilmType ? 'film' : `staffel-${curSeason}`;
-        const streamUrl = `https://aniworld.to/anime/stream/${anime.slug}/${pathSegment}/episode-${nächsteFolge}`;
+        const streamUrl = isFilmType
+            ? `https://aniworld.to/anime/stream/${anime.slug}/filme/film-${nächsteFolge}`
+            : `https://aniworld.to/anime/stream/${anime.slug}/staffel-${curSeason}/episode-${nächsteFolge}`;
         const searchUrl = `https://aniworld.to/support/suche?q=${encodeURIComponent(anime.name)}`;
 
         const card = document.createElement('div');
