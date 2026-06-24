@@ -83,7 +83,7 @@ async function addAnime() {
         isLoading: true,
         isEditing: false,
         hasWarning: false,
-        seasons: [{ number: 1, episodes: 0, isVerified: false }],
+        seasons: [{ number: 1, episodes: 0, isVerified: false, isFilm: false, displayName: 'St. 1' }],
         watchedEpisodes: []
     };
 
@@ -108,13 +108,17 @@ async function addAnime() {
         const dataResp = await fetch(`${API_BASE}?slug=${anime.slug}`).then(r => r.json());
 
         if (dataResp.exists) {
-            anime.seasons = dataResp.seasons;
+            anime.seasons = dataResp.seasons.map((s, i) => ({
+                ...s,
+                isFilm: false,
+                displayName: `St. ${s.number}`
+            }));
             if (dataResp.fallback) anime.hasWarning = true;
             loadEpisodesOnDemand(anime.id, 1);
         } else {
             anime.isLoading = false;
             anime.hasWarning = true;
-            anime.seasons = [{ number: 1, episodes: 12, isVerified: true }];
+            anime.seasons = [{ number: 1, episodes: 12, isVerified: true, isFilm: false, displayName: 'St. 1' }];
             saveAndRender();
         }
 
@@ -219,7 +223,11 @@ function resyncAnime(id) {
                 anime.hasWarning = true;
                 saveAndRender();
             } else {
-                anime.seasons = data.seasons;
+                anime.seasons = data.seasons.map(s => ({
+                    ...s,
+                    isFilm: false,
+                    displayName: `St. ${s.number}`
+                }));
                 anime.activeTab = 1;
                 loadEpisodesOnDemand(id, 1);
             }
@@ -242,14 +250,16 @@ function saveManualEps(id, seasonNum) {
     saveAndRender();
 }
 
-function addManualSeason(id) {
+function addManualSeason(id, isFilm = false) {
     const anime = animeList.find(a => a.id === id);
     if (!anime) return;
     const nextNum = anime.seasons.length + 1;
     anime.seasons.push({
         number: nextNum,
-        episodes: 12,
-        isVerified: true
+        episodes: isFilm ? 1 : 12,
+        isVerified: true,
+        isFilm: isFilm,
+        displayName: isFilm ? '🎬 Filme' : `St. ${nextNum}`
     });
     anime.activeTab = nextNum;
     saveAndRender();
@@ -273,11 +283,12 @@ function toggleEpisode(btnElement, animeId, seasonNum, epNum) {
 
     const curSeason = anime.activeTab || 1;
     const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
+    const isFilmType = seasonData.isFilm === true || seasonData.displayName === '🎬 Filme';
     const geschaut = anime.watchedEpisodes.filter(k => k.startsWith(`s${curSeason}e`)).length;
     
     const meta = btnElement.closest('.anime-card')?.querySelector('.anime-meta');
     if (meta && !anime.isLoading) {
-        meta.innerText = `Gesehen: ${geschaut} / ${seasonData.episodes} Folgen`;
+        meta.innerText = `Gesehen: ${geschaut} / ${seasonData.episodes} ${isFilmType ? 'Filme' : 'Folgen'}`;
     }
 
     const progressBarFill = btnElement.closest('.anime-card')?.querySelector('.progress-bar-fill');
@@ -325,7 +336,7 @@ function renderList() {
         const seasonData = anime.seasons.find(s => s.number === curSeason) || anime.seasons[0];
         const maxBoxen = seasonData.episodes;
         
-        const isFilmType = seasonData.isFilm || false;
+        const isFilmType = seasonData.isFilm === true || seasonData.displayName === '🎬 Filme';
 
         let nächsteFolge = 1;
         while (anime.watchedEpisodes.includes(`s${curSeason}e${nächsteFolge}`) && nächsteFolge <= maxBoxen) nächsteFolge++;
@@ -354,7 +365,7 @@ function renderList() {
 
         const tabsHtml = anime.seasons.map(s => {
             const active = s.number === curSeason ? 'active' : '';
-            const tabName = s.displayName || `St. ${s.number}`;
+            const tabName = s.displayName || (s.isFilm ? '🎬 Filme' : `St. ${s.number}`);
             return `<button class="tab-btn ${active}" onclick="switchTab(${anime.id}, ${s.number})">${tabName}</button>`;
         }).join('');
 
