@@ -118,7 +118,8 @@ async function addAnime() {
         isLoading: true,
         isEditing: false,
         hasWarning: false,
-        seasons: [{ number: 1, episodes: 12, isVerified: false, isFilm: false, displayName: 'St. 1', aniWorldSeason: 1 }],
+        notOnAniworld: false,
+        seasons: [{ number: 1, episodes: 0, isVerified: false, isFilm: false, displayName: 'St. 1', aniWorldSeason: 1 }],
         watchedEpisodes: []
     };
 
@@ -142,25 +143,44 @@ async function addAnime() {
                 } catch (e) {}
             }
 
-            anime.slug = pickBestSlug(allResults, name) || generateSlug(name);
+            // Fallback: Wenn searchResp.results keinen perfekten Slug liefert, nutze den generierten.
+            let bestSlug = pickBestSlug(allResults, name);
+            if (!bestSlug) bestSlug = generateSlug(name);
+            anime.slug = bestSlug;
+
             const dataResp = await fetch(`${API_BASE}?slug=${anime.slug}`).then(r => r.json());
 
-            if (dataResp.exists && dataResp.seasons.length > 0) {
+            if (dataResp.exists) {
                 anime.seasons = dataResp.seasons;
+                anime.notOnAniworld = false;
                 if (dataResp.fallback) anime.hasWarning = true;
                 const firstTab = anime.seasons[0];
                 if (firstTab) loadEpisodesOnDemand(anime.id, firstTab.number);
             } else {
-                // Wenn nichts gefunden wurde, einfach Warnung setzen und Standardwerte lassen
-                anime.hasWarning = true;
                 anime.isLoading = false;
+                anime.notOnAniworld = true;
+                anime.hasWarning = false;
+                anime.seasons = [];
                 saveAndRender();
             }
         } else {
-            // Keine Suchergebnisse -> Warnung setzen
-            anime.hasWarning = true;
-            anime.isLoading = false;
-            saveAndRender();
+            // Versuche es direkt mit dem generierten Slug, falls die Suche fehlschlägt
+            anime.slug = generateSlug(name);
+            const dataResp = await fetch(`${API_BASE}?slug=${anime.slug}`).then(r => r.json());
+            
+            if (dataResp.exists) {
+                anime.seasons = dataResp.seasons;
+                anime.notOnAniworld = false;
+                if (dataResp.fallback) anime.hasWarning = true;
+                const firstTab = anime.seasons[0];
+                if (firstTab) loadEpisodesOnDemand(anime.id, firstTab.number);
+            } else {
+                anime.isLoading = false;
+                anime.notOnAniworld = true;
+                anime.hasWarning = false;
+                anime.seasons = [];
+                saveAndRender();
+            }
         }
     } catch (e) {
         const anime = animeList.find(a => a.id === newAnime.id);
@@ -206,7 +226,7 @@ async function loadEpisodesOnDemand(animeId, tabNumber) {
 
 async function checkForNewEpisodes(animeId, tabNumber) {
     const anime = animeList.find(a => a.id === animeId);
-    if (!anime) return;
+    if (!anime || anime.notOnAniworld) return;
 
     const seasonData = anime.seasons.find(s => s.number === tabNumber);
     if (!seasonData || seasonData.isFilm || !seasonData.isVerified) return;
@@ -284,19 +304,21 @@ function resyncAnime(id) {
     anime.isLoading = true;
     anime.isEditing = false;
     anime.hasWarning = false;
+    anime.notOnAniworld = false;
     renderList();
 
     fetch(`${API_BASE}?slug=${anime.slug}`)
         .then(r => r.json())
         .then(data => {
-            if (data.exists && data.seasons.length > 0) {
+            if (data.exists === false) {
+                anime.isLoading = false;
+                anime.notOnAniworld = true;
+                saveAndRender();
+            } else {
                 anime.seasons = data.seasons;
+                anime.notOnAniworld = false;
                 anime.activeTab = anime.seasons[0].number || 1;
                 loadEpisodesOnDemand(id, anime.activeTab);
-            } else {
-                anime.isLoading = false;
-                anime.hasWarning = true;
-                saveAndRender();
             }
         }).catch(() => {
             anime.isLoading = false;
@@ -415,6 +437,38 @@ function renderList() {
     sorted.sort((a, b) => (isAnimeCompletelyFinished(a) ? 1 : 0) - (isAnimeCompletelyFinished(b) ? 1 : 0));
 
     sorted.forEach(anime => {
+        // HIER IST DER URSPRÜNGLICHE "NICHT AUF ANIWORLD" BLOCK ZURÜCK
+        if (anime.notOnAniworld) {
+            const card = document.createElement('div');
+            card.className = 'anime-card';
+            const posterHtml = anime.image
+                ? `<img class="anime-poster" src="${anime.image}" alt="Poster" onerror="this.outerHTML='<div class=\\'placeholder-poster\\'></div>'">`
+                : '<div class="placeholder-poster"></div>';
+
+            card.innerHTML = `
+                <div class="anime-header-block">
+                    ${posterHtml}
+                    <div class="anime-info">
+                        <h3 class="anime-title">${anime.name}</h3>
+                        <div class="not-on-aniworld-badge">! Nicht auf AniWorld verfügbar</div>
+                        <div class="anime-meta" style="font-size:11px; margin-top:6px;">Der Anime wurde in der Datenbank nicht gefunden.</div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <button onclick="toggleEdit(${anime.id})" style="background:transparent;border:1px solid var(--border-color);color:var(--text-muted); font-size:12px; cursor:pointer;font-weight:600;padding:8px 14px;border-radius:8px;">Slug bearbeiten</button>
+                        <button onclick="removeAnime(${anime.id})" style="background:transparent; border:none;color:#ff4757;font-size:12px;cursor:pointer;font-weight:600;">Löschen</button>
+                    </div>
+                    ${anime.isEditing ? `
+                    <div style="display: flex; gap:8px;margin-top:10px;">
+                        <input type="text" id="editSlug_${anime.id}" value="${anime.slug}" style="padding:8px 12px;font-size:13px; flex-grow:1;background:var(--bg-main);color:white; border:1px solid var(--border-color); border-radius:8px;">
+                        <button onclick="resyncAnime(${anime.id})" style="padding:8px 16px;background:var(--accent); color:white; border:none; border-radius:8px;cursor:pointer;font-weight:bold;">Sync</button>
+                    </div>` : ''}
+                </div>`;
+            grid.appendChild(card);
+            return;
+        }
+
         const curTab = anime.activeTab || (anime.seasons[0] ? anime.seasons[0].number : 1);
         const seasonData = anime.seasons.find(s => s.number === curTab) || anime.seasons[0];
         if (!seasonData) return;
@@ -456,7 +510,6 @@ function renderList() {
             return `<button class="tab-btn ${active}" onclick="switchTab(${anime.id}, ${s.number})">${tabName}</button>`;
         }).join('');
 
-        // Link Unbestätigt Warnung (wenn Slug nicht gefunden wurde)
         const warningHtml = anime.hasWarning
             ? '<div style="color:#ffaa00;font-size:11px;margin-top:4px;font-weight:bold;">! Link unbestätigt</div>'
             : '';
@@ -525,7 +578,6 @@ function renderList() {
             actionButtonHtml = `<a href="${streamUrl}" target="_blank" class="stream-link" onclick="watchEpisodeAuto(${anime.id}, ${curTab}, ${nachsteFolge})">${btnText}</a>`;
         }
 
-        // --- HIER IST DAS NEUE DESIGN FÜR DIE BOTTOM-BUTTONS ---
         const bottomActionsHtml = `
             <div class="card-bottom-actions">
                 <a href="${searchUrl}" target="_blank" class="action-icon-btn">
@@ -652,7 +704,7 @@ document.addEventListener('click', e => {
 
 async function startupRefresh() {
     for (const anime of animeList) {
-        if (anime.isLoading || !anime.seasons?.length) continue;
+        if (anime.notOnAniworld || anime.isLoading || !anime.seasons?.length) continue;
         const activeTab = anime.activeTab || anime.seasons[0]?.number || 1;
         await checkForNewEpisodes(anime.id, activeTab);
     }
