@@ -299,7 +299,7 @@ button {
 /* Originale Größe für die Episoden-Box */
 .episode-grid-container {
     padding: 0 20px 20px 20px;
-    max-height: 150px;
+    flex-grow: 1; /* Zieht den Container nach unten in den leeren Raum */
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
