@@ -320,31 +320,21 @@ function addManualSeason(id, isFilm = false) {
 }
 
 function toggleEpisode(btnElement, animeId, tabNum, epNum) {
-  const anime = animeList.find(a => a.id === animeId);
-  if (!anime) return;
-  const epKey = `s${tabNum}e${epNum}`;
-  const index = anime.watchedEpisodes.indexOf(epKey);
-  if (index === -1) {
-    anime.watchedEpisodes.push(epKey);
-    btnElement.classList.add('watched');
-  } else {
-    anime.watchedEpisodes.splice(index, 1);
-    btnElement.classList.remove('watched');
-  }
-  localStorage.setItem('myAnimeListFullstackV5', JSON.stringify(animeList));
-  const curTab = anime.activeTab || 1;
-  const seasonData = anime.seasons.find(s => s.number === curTab) || anime.seasons[0];
-  const isFilmType = seasonData.isFilm === true;
-  const geschaut = anime.watchedEpisodes.filter(k => k.startsWith(`s${curTab}e`)).length;
-  const meta = btnElement.closest('.anime-card')?.querySelector('.anime-meta');
-  if (meta && !anime.isLoading) {
-    meta.innerText = `Gesehen: ${geschaut} / ${seasonData.episodes} ${isFilmType ? 'Filme' : 'Folgen'}`;
-  }
-  const progressBarFill = btnElement.closest('.anime-card')?.querySelector('.progress-bar-fill');
-  if (progressBarFill && seasonData.episodes > 0) {
-    const neueProzent = Math.min(100, Math.round((geschaut / seasonData.episodes) * 100));
-    progressBarFill.style.width = `${neueProzent}%`;
-  }
+    const anime = animeList.find(a => a.id === animeId);
+    if (!anime) return;
+
+    const epKey = `s${tabNum}e${epNum}`;
+    const index = anime.watchedEpisodes.indexOf(epKey);
+
+    if (index === -1) {
+        anime.watchedEpisodes.push(epKey);
+    } else {
+        anime.watchedEpisodes.splice(index, 1);
+    }
+
+    // Speichert den neuen Stand und rendert die UI komplett neu, 
+    // wodurch Buttons & Statusmeldungen sofort aktualisiert werden.
+    saveAndRender();
 }
 
 function removeAnime(id) {
