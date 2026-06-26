@@ -4,18 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MyAniList - Dashboard</title>
+    
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
+
     <div class="container">
+        
         <header class="app-header">
             <h1>MyAniList</h1>
             <p class="subtitle">Dein persönliches Anime-Streaming-Dashboard</p>
         </header>
-        
+
         <div class="control-panel">
             <div class="input-section">
                 <div class="input-wrapper">
@@ -33,6 +36,15 @@
                     <option value="progress_desc">Gesamtfortschritt</option>
                 </select>
             </div>
+
+            <div class="backup-section" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn-primary" style="background-color: var(--border-color); padding: 10px 15px; font-size: 13px;" onclick="exportData()">💾 Exportieren</button>
+                <label class="btn-primary" style="background-color: var(--border-color); padding: 10px 15px; font-size: 13px; cursor: pointer; margin: 0;">
+                    📂 Importieren
+                    <input type="file" accept=".json" style="display: none;" onchange="importData(event)">
+                </label>
+            </div>
+
         </div>
 
         <main>
@@ -45,7 +57,9 @@
             <div id="recommendationsGrid" class="anime-grid">
                 </div>
         </section>
+
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
