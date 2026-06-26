@@ -140,7 +140,7 @@ async function addAnime() {
                 try {
                     const r2 = await fetch(`${API_BASE}?search=${encodeURIComponent(name)}`).then(r => r.json());
                     if (r2.results?.length) allResults = [...allResults, ...r2.results];
-                } catch () {}
+                } catch (e) { /* Fehler behoben: (e) hinzugefügt */ }
             }
 
             anime.slug = pickBestSlug(allResults, name);
@@ -231,7 +231,7 @@ async function checkForNewEpisodes(animeId, tabNumber) {
             saveAndRender();
             showToast(`${anime.name} - ${seasonData.displayName}: ${freshCount} Folgen verfügbar!`);
         }
-    } catch () {}
+    } catch (e) { /* Fehler behoben: (e) hinzugefügt */ }
 }
 
 function addAnimeFromData(name, slug, image) {
