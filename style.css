@@ -298,7 +298,8 @@ button {
 
 .episode-grid-container {
     padding: 0 20px 20px 20px;
-    max-height: 125px;
+    max-height: 350px; /* Erhöht von 125px, damit mehr Folgen Platz haben */
+    flex-grow: 1; /* WICHTIG: Zieht die Box in die Länge, wenn Platz in der Karte ist */
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
