@@ -296,10 +296,10 @@ button {
     letter-spacing: 1px;
 }
 
+/* Originale Größe für die Episoden-Box */
 .episode-grid-container {
     padding: 0 20px 20px 20px;
-    max-height: 350px; /* Erhöht von 125px, damit mehr Folgen Platz haben */
-    flex-grow: 1; /* WICHTIG: Zieht die Box in die Länge, wenn Platz in der Karte ist */
+    max-height: 150px;
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
@@ -334,7 +334,7 @@ button {
     align-items: center;
     justify-content: center;
     width: 100%;
-    aspect-ratio: 1 / 1;
+    aspect-ratio: 1/1;
     transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -395,49 +395,88 @@ button {
     cursor: pointer;
 }
 
-
-/* ── "Nicht auf AniWorld" Badge ── */
 .not-on-aniworld-badge {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 4px 10px;
-  background: rgba(255, 71, 87, 0.15);
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-  border-radius: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 10px;
+    background: rgba(255, 71, 87, 0.15);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-/* ── Toast notifications ── */
 #toast-container {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 9999;
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 9999;
 }
 
 .toast {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-main);
-  padding: 14px 20px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.3s ease, transform 0.3s ease;
-  max-width: 320px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 14px 20px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    max-width: 320px;
 }
 
 .toast.toast-visible {
-  opacity: 1;
-  transform: translateY(0);
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* --- NEUES DESIGN FÜR DIE BOTTOM ACTIONS WIE AUF DEM BILD --- */
+.card-bottom-actions {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding-top: 15px;
+    margin-top: 15px;
+    border-top: 1px solid var(--border-color);
+}
+
+.action-icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: color 0.2s ease;
+}
+
+.action-icon-btn:hover {
+    color: var(--text-main);
+}
+
+.action-icon-btn.delete {
+    color: #ff4757;
+}
+
+.action-icon-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
 }
