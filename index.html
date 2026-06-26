@@ -31,9 +31,12 @@
             <div class="sort-section">
                 <span>Sortieren</span>
                 <select id="sortCriteria" onchange="changeSort()">
-                    <option value="date_desc">Zuletzt hinzugefügt</option>
+                    <option value="date_desc">Zuletzt hinzugefügt (Neu -> Alt)</option>
+                    <option value="date_asc">Zuerst hinzugefügt (Alt -> Neu)</option>
                     <option value="name_asc">Alphabetisch (A-Z)</option>
-                    <option value="progress_desc">Gesamtfortschritt</option>
+                    <option value="name_desc">Alphabetisch (Z-A)</option>
+                    <option value="progress_desc">Meister Fortschritt</option>
+                    <option value="progress_asc">Wenigster Fortschritt</option>
                 </select>
             </div>
 
@@ -44,7 +47,6 @@
                     <input type="file" accept=".json" style="display: none;" onchange="importData(event)">
                 </label>
             </div>
-
         </div>
 
         <main>
