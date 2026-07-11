@@ -1,6 +1,7 @@
 let animeList = JSON.parse(localStorage.getItem('myAnimeList FullstackV5')) || [];
 let currentSelectedAnime = null;
 let currentSortCriteria = localStorage.getItem('myAnimeListSort') || 'date_desc';
+let currentViewTab = 'active'; // <--- NEU
 let typingTimer;
 const doneTypingInterval = 500;
 let currentRecommendations = [];
@@ -126,7 +127,9 @@ async function addAnime() {
     animeList.unshift(newAnime);
     nameInput.value = "";
     currentSelectedAnime = null;
-    saveAndRender();
+    
+    // Springe automatisch zum "Aktuell" Tab, wenn ein neuer Anime hinzugefügt wird
+    switchMainTab('active');
 
     const searchQuery = jpTitle || name;
     try {
@@ -143,7 +146,6 @@ async function addAnime() {
                 } catch (e) {}
             }
 
-            // Fallback: Wenn searchResp.results keinen perfekten Slug liefert, nutze den generierten.
             let bestSlug = pickBestSlug(allResults, name);
             if (!bestSlug) bestSlug = generateSlug(name);
             anime.slug = bestSlug;
@@ -164,7 +166,6 @@ async function addAnime() {
                 saveAndRender();
             }
         } else {
-            // Versuche es direkt mit dem generierten Slug, falls die Suche fehlschlägt
             anime.slug = generateSlug(name);
             const dataResp = await fetch(`${API_BASE}?slug=${anime.slug}`).then(r => r.json());
             
@@ -412,8 +413,20 @@ function showToast(msg) {
     }, 4000);
 }
 
+// --- NEU: Haupt-Tab-Funktion ---
+function switchMainTab(tabName) {
+    currentViewTab = tabName;
+    const tabActive = document.getElementById('tab-active');
+    const tabCompleted = document.getElementById('tab-completed');
+    if(tabActive) tabActive.classList.toggle('active', tabName === 'active');
+    if(tabCompleted) tabCompleted.classList.toggle('active', tabName === 'completed');
+    renderList(); 
+}
+
 function renderList() {
     const grid = document.getElementById('animeGrid');
+    if (!grid) return;
+    
     const scrollPositions = {};
 
     animeList.forEach(a => {
@@ -423,6 +436,18 @@ function renderList() {
 
     grid.innerHTML = '';
     let sorted = [...animeList];
+
+    // --- NEU: Filtern nach Aktuell oder Abgeschlossen ---
+    if (currentViewTab === 'active') {
+        sorted = sorted.filter(a => !isAnimeCompletelyFinished(a));
+    } else {
+        sorted = sorted.filter(a => isAnimeCompletelyFinished(a));
+    }
+
+    if (sorted.length === 0) {
+        grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px; font-weight: 600;">Keine Animes in diesem Bereich.</div>`;
+        return;
+    }
 
     switch (currentSortCriteria) {
         case 'name_asc': sorted.sort((a, b) => a.name.localeCompare(b.name)); break;
@@ -434,10 +459,7 @@ function renderList() {
         default: sorted.sort((a, b) => b.id - a.id); break;
     }
 
-    sorted.sort((a, b) => (isAnimeCompletelyFinished(a) ? 1 : 0) - (isAnimeCompletelyFinished(b) ? 1 : 0));
-
     sorted.forEach(anime => {
-        // HIER IST DER URSPRÜNGLICHE "NICHT AUF ANIWORLD" BLOCK ZURÜCK
         if (anime.notOnAniworld) {
             const card = document.createElement('div');
             card.className = 'anime-card';
@@ -702,17 +724,17 @@ document.addEventListener('click', e => {
     }
 });
 
+// --- Ladezeit repariert (Ohne die Website einzufrieren) ---
 function startupRefresh() {
-    // 1. SOFORT deine Liste und Empfehlungen aus dem Speicher laden (0 Sekunden Ladezeit)
+    // 1. SOFORT deine Liste aus dem Speicher laden (0 Sekunden Ladezeit)
     renderList();
     loadRecommendations();
 
-    // 2. Im Hintergrund (ohne die Seite zu blockieren) nach Updates suchen
+    // 2. Im Hintergrund nach Updates suchen
     animeList.forEach(anime => {
         if (anime.notOnAniworld || anime.isLoading || !anime.seasons?.length) return;
         
         const activeTab = anime.activeTab || anime.seasons[0]?.number || 1;
-        // Startet den Check asynchron im Hintergrund
         checkForNewEpisodes(anime.id, activeTab);
     });
 }
