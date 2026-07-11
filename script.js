@@ -702,15 +702,19 @@ document.addEventListener('click', e => {
     }
 });
 
-async function startupRefresh() {
-    for (const anime of animeList) {
-        if (anime.notOnAniworld || anime.isLoading || !anime.seasons?.length) continue;
-        const activeTab = anime.activeTab || anime.seasons[0]?.number || 1;
-        await checkForNewEpisodes(anime.id, activeTab);
-    }
-    localStorage.setItem('myAnimeList FullstackV5', JSON.stringify(animeList));
+function startupRefresh() {
+    // 1. SOFORT deine Liste und Empfehlungen aus dem Speicher laden (0 Sekunden Ladezeit)
     renderList();
     loadRecommendations();
+
+    // 2. Im Hintergrund (ohne die Seite zu blockieren) nach Updates suchen
+    animeList.forEach(anime => {
+        if (anime.notOnAniworld || anime.isLoading || !anime.seasons?.length) return;
+        
+        const activeTab = anime.activeTab || anime.seasons[0]?.number || 1;
+        // Startet den Check asynchron im Hintergrund
+        checkForNewEpisodes(anime.id, activeTab);
+    });
 }
 
 function exportData() {
