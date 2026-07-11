@@ -49,15 +49,23 @@
             </div>
         </div>
 
+        <!-- NEU: Die Tabs für Aktuell / Abgeschlossen -->
+        <div class="main-tabs-container">
+            <button id="tab-active" class="main-tab active" onclick="switchMainTab('active')">Aktuell</button>
+            <button id="tab-completed" class="main-tab" onclick="switchMainTab('completed')">Abgeschlossen</button>
+        </div>
+
         <main>
             <div id="animeGrid" class="anime-grid">
-                </div>
+                <!-- Anime Cards werden hier per JS generiert -->
+            </div>
         </main>
 
         <section class="recommendations-container">
             <h2>Vorschläge für dich</h2>
             <div id="recommendationsGrid" class="anime-grid">
-                </div>
+                <!-- Empfehlungen werden hier per JS generiert -->
+            </div>
         </section>
 
     </div>
