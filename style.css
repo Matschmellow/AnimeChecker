@@ -487,3 +487,34 @@ button {
     height: 16px;
     fill: currentColor;
 }
+
+/* --- HAUPT-TABS (Aktuell / Abgeschlossen) --- */
+.main-tabs-container {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.main-tab {
+    background-color: var(--bg-card);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    padding: 10px 30px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.main-tab:hover {
+    color: var(--text-main);
+    border-color: #33334d;
+}
+
+.main-tab.active {
+    background-color: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
