@@ -1,7 +1,8 @@
 let animeList = JSON.parse(localStorage.getItem('myAnimeList FullstackV5')) || [];
 let currentSelectedAnime = null;
-let currentSortCriteria = localStorage.getItem('myAnimeListSort') || 'date_desc';
-let currentViewTab = 'active'; // <--- NEU
+// Standard ist nun 'last_active' (Zuletzt aktiv)
+let currentSortCriteria = localStorage.getItem('myAnimeListSort') || 'last_active';
+let currentViewTab = 'active'; 
 let typingTimer;
 const doneTypingInterval = 500;
 let currentRecommendations = [];
@@ -121,14 +122,14 @@ async function addAnime() {
         hasWarning: false,
         notOnAniworld: false,
         seasons: [{ number: 1, episodes: 0, isVerified: false, isFilm: false, displayName: 'St. 1', aniWorldSeason: 1 }],
-        watchedEpisodes: []
+        watchedEpisodes: [],
+        lastActive: Date.now() // Neuer Zeitstempel für "Zuletzt aktiv"
     };
 
     animeList.unshift(newAnime);
     nameInput.value = "";
     currentSelectedAnime = null;
     
-    // Springe automatisch zum "Aktuell" Tab, wenn ein neuer Anime hinzugefügt wird
     switchMainTab('active');
 
     const searchQuery = jpTitle || name;
@@ -274,7 +275,11 @@ function watchEpisodeAuto(animeId, tabNum, epNum) {
     if (!anime) return;
 
     const epKey = `s${tabNum}e${epNum}`;
-    if (!anime.watchedEpisodes.includes(epKey)) anime.watchedEpisodes.push(epKey);
+    if (!anime.watchedEpisodes.includes(epKey)) {
+        anime.watchedEpisodes.push(epKey);
+        anime.lastActive = Date.now(); // Zeitstempel aktualisieren
+    }
+    
     const seasonData = anime.seasons.find(s => s.number === tabNum);
     const maxBoxen = seasonData ? seasonData.episodes : 12;
 
@@ -374,6 +379,8 @@ function toggleEpisode(btnElement, animeId, tabNum, epNum) {
     } else {
         anime.watchedEpisodes.splice(index, 1);
     }
+    
+    anime.lastActive = Date.now(); // Zeitstempel bei jeder Interaktion updaten
     saveAndRender();
 }
 
@@ -382,10 +389,20 @@ function removeAnime(id) {
     saveAndRender();
 }
 
-function changeSort() {
-    currentSortCriteria = document.getElementById('sortCriteria').value;
+// --- NEUE Sortier-Logik für die Pillen ---
+function changeSort(criteria) {
+    currentSortCriteria = criteria;
     localStorage.setItem('myAnimeListSort', currentSortCriteria);
+    updateSortPillsUI();
     renderList();
+}
+
+function updateSortPillsUI() {
+    const pills = document.querySelectorAll('.sort-pill');
+    pills.forEach(p => p.classList.remove('active'));
+    
+    const activePill = document.getElementById('sort_' + currentSortCriteria);
+    if (activePill) activePill.classList.add('active');
 }
 
 function saveAndRender() {
@@ -413,7 +430,6 @@ function showToast(msg) {
     }, 4000);
 }
 
-// --- NEU: Haupt-Tab-Funktion ---
 function switchMainTab(tabName) {
     currentViewTab = tabName;
     const tabActive = document.getElementById('tab-active');
@@ -437,7 +453,6 @@ function renderList() {
     grid.innerHTML = '';
     let sorted = [...animeList];
 
-    // --- NEU: Filtern nach Aktuell oder Abgeschlossen ---
     if (currentViewTab === 'active') {
         sorted = sorted.filter(a => !isAnimeCompletelyFinished(a));
     } else {
@@ -449,14 +464,30 @@ function renderList() {
         return;
     }
 
+    // --- Die neuen, smarten Sortierungen ---
     switch (currentSortCriteria) {
-        case 'name_asc': sorted.sort((a, b) => a.name.localeCompare(b.name)); break;
-        case 'name_desc': sorted.sort((a, b) => b.name.localeCompare(a.name)); break;
-        case 'progress_desc': sorted.sort((a, b) => b.watchedEpisodes.length - a.watchedEpisodes.length); break;
-        case 'progress_asc': sorted.sort((a, b) => a.watchedEpisodes.length - b.watchedEpisodes.length); break;
-        case 'date_asc': sorted.sort((a, b) => a.id - b.id); break;
-        case 'date_desc':
-        default: sorted.sort((a, b) => b.id - a.id); break;
+        case 'last_active': 
+            // Sortiert nach Aktivität, alte Animes ohne Stempel fallen auf ihre ID zurück
+            sorted.sort((a, b) => (b.lastActive || b.id) - (a.lastActive || a.id)); 
+            break;
+        case 'progress_percent': 
+            sorted.sort((a, b) => {
+                const totalA = a.seasons.reduce((sum, s) => sum + s.episodes, 0);
+                const pctA = totalA ? a.watchedEpisodes.length / totalA : 0;
+                const totalB = b.seasons.reduce((sum, s) => sum + s.episodes, 0);
+                const pctB = totalB ? b.watchedEpisodes.length / totalB : 0;
+                return pctB - pctA;
+            }); 
+            break;
+        case 'date_desc': 
+            sorted.sort((a, b) => b.id - a.id); 
+            break;
+        case 'name_asc': 
+            sorted.sort((a, b) => a.name.localeCompare(b.name)); 
+            break;
+        default: 
+            sorted.sort((a, b) => (b.lastActive || b.id) - (a.lastActive || a.id)); 
+            break;
     }
 
     sorted.forEach(anime => {
@@ -724,16 +755,13 @@ document.addEventListener('click', e => {
     }
 });
 
-// --- Ladezeit repariert (Ohne die Website einzufrieren) ---
 function startupRefresh() {
-    // 1. SOFORT deine Liste aus dem Speicher laden (0 Sekunden Ladezeit)
+    updateSortPillsUI(); // UI auf gespeicherten Zustand setzen
     renderList();
     loadRecommendations();
 
-    // 2. Im Hintergrund nach Updates suchen
     animeList.forEach(anime => {
         if (anime.notOnAniworld || anime.isLoading || !anime.seasons?.length) return;
-        
         const activeTab = anime.activeTab || anime.seasons[0]?.number || 1;
         checkForNewEpisodes(anime.id, activeTab);
     });
@@ -803,5 +831,4 @@ function importData(event) {
     event.target.value = '';
 }
 
-document.getElementById('sortCriteria').value = currentSortCriteria;
 startupRefresh();
