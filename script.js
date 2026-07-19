@@ -55,7 +55,7 @@ function pickBestSlug(searchResults, queryName) {
 }
 
 function showSuggestions() {
-    currentSelectedAnime = null; // WICHTIGER FIX: Löscht alte Auswahl, sobald du neu tippst
+    currentSelectedAnime = null; 
     clearTimeout(typingTimer);
     
     const input = document.getElementById('animeName').value.trim();
@@ -67,18 +67,28 @@ function showSuggestions() {
         return;
     }
 
+    // DER FIX: Jikan API stürzt ab, wenn man weniger als 3 Zeichen sucht!
+    if (input.length < 3) {
+        list.innerHTML = '<div class="autocomplete-info">Bitte mindestens 3 Buchstaben tippen...</div>';
+        list.style.display = 'block';
+        return;
+    }
+
     list.innerHTML = '<div class="autocomplete-info">Suche läuft...</div>';
     list.style.display = 'block';
 
-    // Timer auf 800ms erhöht, um API-Blockaden (Spamschutz) zu verhindern
     typingTimer = setTimeout(() => {
         fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
-            .then(res => {
-                if (!res.ok) throw new Error('API Limit erreicht');
-                return res.json();
-            })
+            .then(res => res.json()) // Wir lesen das JSON jetzt immer, auch bei API-Limit
             .then(data => {
                 list.innerHTML = '';
+                
+                // Falls die API uns wegen Spam kurz blockt (Status 429)
+                if (data.status === 429) {
+                    list.innerHTML = '<div class="autocomplete-info">! API kurz überlastet. Kurz warten...</div>';
+                    return;
+                }
+
                 if (data.data && data.data.length > 0) {
                     data.data.forEach(anime => {
                         const jpTitle = anime.title;
@@ -91,7 +101,7 @@ function showSuggestions() {
                         item.className = 'autocomplete-item';
                         item.innerText = displayTitle;
                         
-                        // FIX: onmousedown statt onclick (reagiert in Millisekunden, bevor das Feld den Fokus verliert)
+                        // onmousedown reagiert viel schneller als onclick
                         item.onmousedown = (e) => {
                             e.preventDefault();
                             selectAnime(name, imageUrl, jpTitle);
@@ -102,9 +112,9 @@ function showSuggestions() {
                 } else {
                     list.innerHTML = '<div class="autocomplete-info">Keine Ergebnisse gefunden</div>';
                 }
-            }).catch(() => {
-                // Eindeutige Fehlermeldung, falls die API kurz streikt
-                list.innerHTML = '<div class="autocomplete-info">! Suche blockiert (API-Limit). Bitte 2 Sekunden warten und nochmal tippen.</div>';
+            }).catch(err => {
+                console.error("Suchfehler:", err);
+                list.innerHTML = '<div class="autocomplete-info">! Verbindung zur Datenbank fehlgeschlagen.</div>';
             });
     }, 800); 
 }
