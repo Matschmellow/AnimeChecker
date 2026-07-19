@@ -22,13 +22,13 @@
         <div class="control-panel">
             <div class="input-section">
                 <div class="input-wrapper">
-                    <input type="text" id="animeName" placeholder="Anime suchen oder eintippen..." oninput="showSuggestions()" autocomplete="off">
+                    <!-- HIER: Wieder auf onkeyup="showSuggestions()" zurückgesetzt -->
+                    <input type="text" id="animeName" placeholder="Anime suchen oder eintippen..." onkeyup="showSuggestions()" autocomplete="off">
                     <div id="autocompleteList" class="autocomplete-list"></div>
                 </div>
                 <button class="btn-primary" onclick="addAnime()">Hinzufügen</button>
             </div>
 
-            <!-- NEU: Sleeke Sortier-Pillen statt Dropdown -->
             <div class="sort-section">
                 <div class="sort-pills">
                     <button class="sort-pill" onclick="changeSort('last_active')" id="sort_last_active">🕒 Aktiv</button>
