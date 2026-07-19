@@ -1,6 +1,5 @@
 let animeList = JSON.parse(localStorage.getItem('myAnimeList FullstackV5')) || [];
 let currentSelectedAnime = null;
-// Standard ist nun 'last_active' (Zuletzt aktiv)
 let currentSortCriteria = localStorage.getItem('myAnimeListSort') || 'last_active';
 let currentViewTab = 'active'; 
 let typingTimer;
@@ -54,10 +53,9 @@ function pickBestSlug(searchResults, queryName) {
     return best;
 }
 
+// --- HIER IST DEINE ALTE, FUNKTIONIERENDE SUCHFUNKTION ---
 function showSuggestions() {
-    currentSelectedAnime = null; 
     clearTimeout(typingTimer);
-    
     const input = document.getElementById('animeName').value.trim();
     const list = document.getElementById('autocompleteList');
 
@@ -67,28 +65,14 @@ function showSuggestions() {
         return;
     }
 
-    // DER FIX: Jikan API stürzt ab, wenn man weniger als 3 Zeichen sucht!
-    if (input.length < 3) {
-        list.innerHTML = '<div class="autocomplete-info">Bitte mindestens 3 Buchstaben tippen...</div>';
-        list.style.display = 'block';
-        return;
-    }
-
     list.innerHTML = '<div class="autocomplete-info">Suche läuft...</div>';
     list.style.display = 'block';
 
     typingTimer = setTimeout(() => {
         fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
-            .then(res => res.json()) // Wir lesen das JSON jetzt immer, auch bei API-Limit
+            .then(res => res.json())
             .then(data => {
                 list.innerHTML = '';
-                
-                // Falls die API uns wegen Spam kurz blockt (Status 429)
-                if (data.status === 429) {
-                    list.innerHTML = '<div class="autocomplete-info">! API kurz überlastet. Kurz warten...</div>';
-                    return;
-                }
-
                 if (data.data && data.data.length > 0) {
                     data.data.forEach(anime => {
                         const jpTitle = anime.title;
@@ -100,23 +84,16 @@ function showSuggestions() {
                         const item = document.createElement('div');
                         item.className = 'autocomplete-item';
                         item.innerText = displayTitle;
-                        
-                        // onmousedown reagiert viel schneller als onclick
-                        item.onmousedown = (e) => {
-                            e.preventDefault();
-                            selectAnime(name, imageUrl, jpTitle);
-                        };
-                        
+                        item.onclick = () => selectAnime(name, imageUrl, jpTitle);
                         list.appendChild(item);
                     });
                 } else {
                     list.innerHTML = '<div class="autocomplete-info">Keine Ergebnisse gefunden</div>';
                 }
-            }).catch(err => {
-                console.error("Suchfehler:", err);
-                list.innerHTML = '<div class="autocomplete-info">! Verbindung zur Datenbank fehlgeschlagen.</div>';
+            }).catch(() => {
+                list.innerHTML = '<div class="autocomplete-info">! Verbindung fehlgeschlagen.</div>';
             });
-    }, 800); 
+    }, doneTypingInterval);
 }
 
 function selectAnime(name, image, jpTitle) {
@@ -124,6 +101,7 @@ function selectAnime(name, image, jpTitle) {
     currentSelectedAnime = { name, image, jpTitle, slug: null };
     document.getElementById('autocompleteList').style.display = 'none';
 }
+// -----------------------------------------------------------
 
 async function addAnime() {
     const nameInput = document.getElementById('animeName');
@@ -146,7 +124,7 @@ async function addAnime() {
         notOnAniworld: false,
         seasons: [{ number: 1, episodes: 0, isVerified: false, isFilm: false, displayName: 'St. 1', aniWorldSeason: 1 }],
         watchedEpisodes: [],
-        lastActive: Date.now() // Neuer Zeitstempel für "Zuletzt aktiv"
+        lastActive: Date.now()
     };
 
     animeList.unshift(newAnime);
@@ -300,7 +278,7 @@ function watchEpisodeAuto(animeId, tabNum, epNum) {
     const epKey = `s${tabNum}e${epNum}`;
     if (!anime.watchedEpisodes.includes(epKey)) {
         anime.watchedEpisodes.push(epKey);
-        anime.lastActive = Date.now(); // Zeitstempel aktualisieren
+        anime.lastActive = Date.now();
     }
     
     const seasonData = anime.seasons.find(s => s.number === tabNum);
@@ -403,7 +381,7 @@ function toggleEpisode(btnElement, animeId, tabNum, epNum) {
         anime.watchedEpisodes.splice(index, 1);
     }
     
-    anime.lastActive = Date.now(); // Zeitstempel bei jeder Interaktion updaten
+    anime.lastActive = Date.now();
     saveAndRender();
 }
 
@@ -412,7 +390,6 @@ function removeAnime(id) {
     saveAndRender();
 }
 
-// --- NEUE Sortier-Logik für die Pillen ---
 function changeSort(criteria) {
     currentSortCriteria = criteria;
     localStorage.setItem('myAnimeListSort', currentSortCriteria);
@@ -487,10 +464,8 @@ function renderList() {
         return;
     }
 
-    // --- Die neuen, smarten Sortierungen ---
     switch (currentSortCriteria) {
         case 'last_active': 
-            // Sortiert nach Aktivität, alte Animes ohne Stempel fallen auf ihre ID zurück
             sorted.sort((a, b) => (b.lastActive || b.id) - (a.lastActive || a.id)); 
             break;
         case 'progress_percent': 
@@ -779,7 +754,7 @@ document.addEventListener('click', e => {
 });
 
 function startupRefresh() {
-    updateSortPillsUI(); // UI auf gespeicherten Zustand setzen
+    updateSortPillsUI();
     renderList();
     loadRecommendations();
 
