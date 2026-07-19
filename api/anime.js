@@ -59,14 +59,43 @@ async function searchAniworld(query) {
       },
       timeout: 5000
     });
-    const $ = cheerio.load(data);
+
     const results = [];
-    $('a[href*="/anime/stream/"]').each((_, el) => {
-      const href = $(el).attr('href') || '';
-      const title = $(el).text().trim();
-      const match = href.match(/\/anime\/stream\/([^\/]+)\/?$/);
-      if (match) results.push({ slug: match[1], title });
-    });
+
+    // AniWorld liefert bei /ajax/search ein JSON-Array zurück (z.B.
+    // [{ title, description, link, cover }, ...]), kein HTML. Axios parst
+    // JSON-Responses meist schon automatisch zu einem Array/Objekt; falls
+    // es doch als String ankommt, wird es hier zusätzlich geparst.
+    let jsonItems = null;
+    if (Array.isArray(data)) {
+      jsonItems = data;
+    } else if (typeof data === 'string') {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) jsonItems = parsed;
+      } catch (_) {
+        jsonItems = null;
+      }
+    }
+
+    if (jsonItems) {
+      for (const item of jsonItems) {
+        const link = item.link || item.url || '';
+        const title = item.title || item.name || '';
+        const match = link.match(/\/anime\/stream\/([^\/]+)\/?$/);
+        if (match) results.push({ slug: match[1], title });
+      }
+    } else {
+      // Fallback: falls doch HTML zurückkommt, wie ursprünglich per Cheerio parsen
+      const $ = cheerio.load(data);
+      $('a[href*="/anime/stream/"]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const title = $(el).text().trim();
+        const match = href.match(/\/anime\/stream\/([^\/]+)\/?$/);
+        if (match) results.push({ slug: match[1], title });
+      });
+    }
+
     // Deduplicate by slug
     const seen = new Set();
     return results.filter(r => {
