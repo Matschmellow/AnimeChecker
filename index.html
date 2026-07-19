@@ -22,7 +22,7 @@
         <div class="control-panel">
             <div class="input-section">
                 <div class="input-wrapper">
-                    <input type="text" id="animeName" placeholder="Anime suchen oder eintippen..." onkeyup="showSuggestions()" autocomplete="off">
+                    <input type="text" id="animeName" placeholder="Anime suchen oder eintippen..." oninput="showSuggestions()" autocomplete="off">
                     <div id="autocompleteList" class="autocomplete-list"></div>
                 </div>
                 <button class="btn-primary" onclick="addAnime()">Hinzufügen</button>
