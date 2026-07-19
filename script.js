@@ -55,7 +55,9 @@ function pickBestSlug(searchResults, queryName) {
 }
 
 function showSuggestions() {
+    currentSelectedAnime = null; // WICHTIGER FIX: Löscht alte Auswahl, sobald du neu tippst
     clearTimeout(typingTimer);
+    
     const input = document.getElementById('animeName').value.trim();
     const list = document.getElementById('autocompleteList');
 
@@ -68,9 +70,13 @@ function showSuggestions() {
     list.innerHTML = '<div class="autocomplete-info">Suche läuft...</div>';
     list.style.display = 'block';
 
+    // Timer auf 800ms erhöht, um API-Blockaden (Spamschutz) zu verhindern
     typingTimer = setTimeout(() => {
         fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error('API Limit erreicht');
+                return res.json();
+            })
             .then(data => {
                 list.innerHTML = '';
                 if (data.data && data.data.length > 0) {
@@ -84,16 +90,23 @@ function showSuggestions() {
                         const item = document.createElement('div');
                         item.className = 'autocomplete-item';
                         item.innerText = displayTitle;
-                        item.onclick = () => selectAnime(name, imageUrl, jpTitle);
+                        
+                        // FIX: onmousedown statt onclick (reagiert in Millisekunden, bevor das Feld den Fokus verliert)
+                        item.onmousedown = (e) => {
+                            e.preventDefault();
+                            selectAnime(name, imageUrl, jpTitle);
+                        };
+                        
                         list.appendChild(item);
                     });
                 } else {
                     list.innerHTML = '<div class="autocomplete-info">Keine Ergebnisse gefunden</div>';
                 }
             }).catch(() => {
-                list.innerHTML = '<div class="autocomplete-info">! Verbindung fehlgeschlagen.</div>';
+                // Eindeutige Fehlermeldung, falls die API kurz streikt
+                list.innerHTML = '<div class="autocomplete-info">! Suche blockiert (API-Limit). Bitte 2 Sekunden warten und nochmal tippen.</div>';
             });
-    }, doneTypingInterval);
+    }, 800); 
 }
 
 function selectAnime(name, image, jpTitle) {
