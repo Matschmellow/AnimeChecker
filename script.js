@@ -53,7 +53,92 @@ function pickBestSlug(searchResults, queryName) {
     return best;
 }
 
-// --- HIER IST DEINE ALTE, FUNKTIONIERENDE SUCHFUNKTION ---
+// --- SUCHFUNKTION (AniList API statt Jikan/MAL) ---
+// Jikan/MyAnimeList verarbeitet keine Suchanfragen unter 3 Zeichen und liefert
+// dann immer ein leeres Ergebnis. AniList (GraphQL, kostenlos, kein Auth nötig)
+// hat dieses Limit nicht und liefert Romaji-, Englisch- und Originaltitel mit,
+// wodurch Suche ab 1 Buchstaben und in mehreren Sprachen funktioniert.
+const ANILIST_ENDPOINT = 'https://graphql.anilist.co';
+const ANILIST_SEARCH_QUERY = `
+query ($search: String) {
+  Page(perPage: 8) {
+    media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+      id
+      title {
+        romaji
+        english
+        native
+      }
+      coverImage {
+        large
+      }
+    }
+  }
+}`;
+
+function renderSuggestionItems(list, items) {
+    list.innerHTML = '';
+    items.forEach(({ name, displayTitle, imageUrl, jpTitle }) => {
+        const item = document.createElement('div');
+        item.className = 'autocomplete-item';
+        item.innerText = displayTitle;
+        item.onclick = () => selectAnime(name, imageUrl, jpTitle);
+        list.appendChild(item);
+    });
+}
+
+function normalizeAniListResults(media) {
+    return media.map(anime => {
+        const romaji = anime.title.romaji;
+        const engTitle = anime.title.english;
+        const nativeTitle = anime.title.native;
+        const displayTitle = engTitle && engTitle !== romaji
+            ? `${engTitle} (${romaji})`
+            : romaji || engTitle || nativeTitle;
+        return {
+            name: engTitle || romaji || nativeTitle,
+            displayTitle,
+            imageUrl: anime.coverImage?.large || null,
+            jpTitle: romaji || nativeTitle
+        };
+    });
+}
+
+function normalizeJikanResults(entries) {
+    return entries.map(anime => {
+        const jpTitle = anime.title;
+        const engTitle = anime.title_english;
+        return {
+            name: engTitle || jpTitle,
+            displayTitle: engTitle ? `${engTitle} (${jpTitle})` : jpTitle,
+            imageUrl: anime.images?.jpg?.large_image_url || null,
+            jpTitle
+        };
+    });
+}
+
+async function fetchAniListSuggestions(query) {
+    const res = await fetch(ANILIST_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ query: ANILIST_SEARCH_QUERY, variables: { search: query } })
+    });
+    const json = await res.json();
+    console.log('[AniList] response:', json);
+    if (json.errors && json.errors.length > 0) {
+        throw new Error('AniList: ' + json.errors.map(e => e.message).join(', '));
+    }
+    const media = json?.data?.Page?.media || [];
+    return normalizeAniListResults(media);
+}
+
+async function fetchJikanSuggestions(query) {
+    const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=6`);
+    const json = await res.json();
+    console.log('[Jikan] response:', json);
+    return normalizeJikanResults(json.data || []);
+}
+
 function showSuggestions() {
     clearTimeout(typingTimer);
     const input = document.getElementById('animeName').value.trim();
@@ -68,31 +153,33 @@ function showSuggestions() {
     list.innerHTML = '<div class="autocomplete-info">Suche läuft...</div>';
     list.style.display = 'block';
 
-    typingTimer = setTimeout(() => {
-        fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(input)}&limit=5`)
-            .then(res => res.json())
-            .then(data => {
-                list.innerHTML = '';
-                if (data.data && data.data.length > 0) {
-                    data.data.forEach(anime => {
-                        const jpTitle = anime.title;
-                        const engTitle = anime.title_english;
-                        const displayTitle = engTitle ? `${engTitle} (${jpTitle})` : jpTitle;
-                        const name = engTitle || jpTitle;
-                        const imageUrl = anime.images?.jpg?.large_image_url || null;
+    typingTimer = setTimeout(async () => {
+        let results = [];
+        let aniListError = null;
 
-                        const item = document.createElement('div');
-                        item.className = 'autocomplete-item';
-                        item.innerText = displayTitle;
-                        item.onclick = () => selectAnime(name, imageUrl, jpTitle);
-                        list.appendChild(item);
-                    });
-                } else {
-                    list.innerHTML = '<div class="autocomplete-info">Keine Ergebnisse gefunden</div>';
-                }
-            }).catch(() => {
-                list.innerHTML = '<div class="autocomplete-info">! Verbindung fehlgeschlagen.</div>';
-            });
+        try {
+            results = await fetchAniListSuggestions(input);
+        } catch (e) {
+            aniListError = e.message;
+            console.error('[AniList] Fehler:', e);
+        }
+
+        // Fallback auf Jikan, falls AniList nichts liefert (z.B. bei >=3 Zeichen)
+        if (results.length === 0 && input.length >= 3) {
+            try {
+                results = await fetchJikanSuggestions(input);
+            } catch (e) {
+                console.error('[Jikan] Fehler:', e);
+            }
+        }
+
+        if (results.length > 0) {
+            renderSuggestionItems(list, results);
+        } else if (aniListError) {
+            list.innerHTML = `<div class="autocomplete-info">! Fehler: ${aniListError}</div>`;
+        } else {
+            list.innerHTML = '<div class="autocomplete-info">Keine Ergebnisse gefunden</div>';
+        }
     }, doneTypingInterval);
 }
 
